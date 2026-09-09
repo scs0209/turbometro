@@ -386,10 +386,20 @@ export async function renderMetroHtml(opts: {
         const pg=new THREE.Group();
         pg.userData.baseScale=1;
         pg.userData.baseY=0;
-        pg.position.y=0;
+        pg.position.set(0,0,0);
         parts.push(pg); g.add(pg); return pg;
       }
-      // order = bokoko reveal order
+      function windowPane(x,y,z){
+        // BasicMaterial + depthWrite false: never get buried by body / lighting
+        const mat=new THREE.MeshBasicMaterial({
+          color:0x7ecbff, transparent:false, depthWrite:false
+        });
+        const w=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.14,0.05), mat);
+        w.position.set(x,y,z);
+        w.renderOrder=10;
+        return w;
+      }
+      // bokoko reveal order: rear → body → windows → headlight
       const rear=part();
       const car2=new THREE.Mesh(new RoundedBoxGeometry(0.55,0.34,0.4,2,0.06),
         new THREE.MeshStandardMaterial({color:color.clone().offsetHSL(0,-0.05,0.06), roughness:0.35, metalness:0.2, emissive:color, emissiveIntensity:0.15}));
@@ -401,19 +411,18 @@ export async function renderMetroHtml(opts: {
       body.castShadow=true; body.name='body'; mid.add(body);
 
       const glass=part();
-      // unique materials per pane — never share opacity state
-      [[0.15,0.06,0.22],[-0.2,0.06,0.22],[-0.78,0.06,0.21]].forEach(([x,y,z])=>{
-        const w=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.12,0.02),
-          new THREE.MeshStandardMaterial({color:0xb8dcff, emissive:0x5aa8ff, emissiveIntensity:0.35, roughness:0.2, metalness:0.4}));
-        w.position.set(x,y,z); glass.add(w);
-      });
+      glass.name='windows';
+      // both flanks, clearly outside body half-depth (0.21)
+      [[0.18,0.05,0.28],[-0.18,0.05,0.28],[0.18,0.05,-0.28],[-0.18,0.05,-0.28],
+       [-0.78,0.05,0.26],[-0.78,0.05,-0.26]].forEach(([x,y,z])=> glass.add(windowPane(x,y,z)));
 
       const nose=part();
-      const light=new THREE.Mesh(new THREE.SphereGeometry(0.045,8,8),
-        new THREE.MeshStandardMaterial({color:0xfff2c4, emissive:0xffe08a, emissiveIntensity:0.9}));
-      light.position.set(0.5,0,0); nose.add(light);
+      const light=new THREE.Mesh(new THREE.SphereGeometry(0.05,10,10),
+        new THREE.MeshStandardMaterial({color:0xfff2c4, emissive:0xffe08a, emissiveIntensity:1.1}));
+      light.position.set(0.52,0,0); nose.add(light);
 
       g.userData.parts=parts;
+      g.userData.windows=glass;
       return g;
     }
 
@@ -668,6 +677,11 @@ export async function renderMetroHtml(opts: {
           const done=updateStaggerParts(parts, t-tr.t0, tr.partDur, tr.partStagger);
           if(done){
             snapPartsIn(parts);
+            if(tr.mesh.userData.windows){
+              tr.mesh.userData.windows.visible=true;
+              tr.mesh.userData.windows.scale.setScalar(1);
+              tr.mesh.userData.windows.position.y=0;
+            }
             trainEverDeparted=true;
             tr.phase='ride';
             tr.t0=t;
@@ -681,6 +695,9 @@ export async function renderMetroHtml(opts: {
         } else if(tr.phase==='arrived'){
           // parked — no animation
         } else if(playing && tr.phase==='ride'){
+          if(tr.mesh.userData.windows && !tr.mesh.userData.windows.visible){
+            snapPartsIn(tr.mesh.userData.parts||[]);
+          }
           const u=Math.min(1, (t-tr.t0)*tr.speed);
           placeTrainOnCurve(tr.mesh, tr.curve, u);
           if(u>=1){
