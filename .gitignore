@@ -1,5 +1,6 @@
 node_modules/
 dist/
 metro.html
+metro-*.html
 *.tgz
 .DS_Store
