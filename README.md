@@ -2,39 +2,29 @@
 
 **Your monorepo as a subway — trains run when turbo does.**
 
-`npx turbometro` turns a **pnpm + Turborepo** workspace into a self-contained subway map: packages are stations, workspace deps are rails, and turbo tasks ride as trains.
+`npx turbometro` turns a **pnpm + Turborepo** workspace into a self-contained **3D subway**: packages are stations, workspace deps are rails, and turbo tasks ride as trains.
+
+![turbometro demo](docs/demo.gif)
 
 > **v0.1 honesty:** trains are **synthetic / replay** by default (not a live turbo attach). Live attach is on the roadmap.
 
-## Demo
-
-```bash
-npm run build && node bin/turbometro.js --demo --out metro.html
-npx --yes serve . -p 4173
-# open http://localhost:4173/metro.html
-```
-
-Outputs a **real WebGL 3D scene** (Three.js): orbit camera, lit tube rails, 3D trains on curves. Needs network once for the Three.js CDN (or use a local static server — `file://` can block ES modules).
-
-Record a GIF with [`docs/gif-recipe.md`](docs/gif-recipe.md).
-
-
-### After npm publish
+## Quick start
 
 ```bash
 npx turbometro
-# writes ./metro.html
+# writes ./metro.html — serve it over http (CDN Three.js)
+npx --yes serve . -p 4173
+# open http://localhost:4173/metro.html
+# click a neon station → buildings assemble once → train rides
 ```
 
-### Before publish (this repo)
+## Demo (this repo)
 
 ```bash
-git clone https://github.com/scs0209/turbometro.git
-cd turbometro
 npm install
 npm run build
 node bin/turbometro.js --demo --out metro.html
-open metro.html
+npx --yes serve . -p 4173
 ```
 
 Against the fixture:
@@ -52,16 +42,23 @@ turbometro --demo
 
 | Flag | Meaning |
 |------|---------|
-| `--demo` | Built-in 3-station sample (no workspace required) |
+| `--demo` | Built-in sample graph (no workspace required) |
 | `--replay` | Use a timeline JSON instead of synthetic events |
 | `--force` | Bypass the 150-package hard cap |
 | `--out` | Output path (default `./metro.html`) |
+
+## Interaction
+
+- **First click** on a station: stop kit assembles piece-by-piece, then the train materializes and rides the dep path
+- **Later clicks**: train keeps the mesh — only the path retargets (no flicker)
+- Orbit: drag · zoom: scroll · **Clear train** removes the rider
 
 ## Requirements
 
 - Node ≥ 20
 - Target repo: `pnpm-workspace.yaml` + `turbo.json` or `turbo.jsonc`
 - Dependency cycles: **warned** and cycle edges dropped (map still renders)
+- Open the HTML via a local static server (`file://` can block ES modules / CDN)
 
 ## Replay JSON
 

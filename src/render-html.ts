@@ -714,6 +714,14 @@ export async function renderMetroHtml(opts: {
       const w=view.clientWidth, h=view.clientHeight;
       camera.aspect=w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h);
     });
+
+    // optional capture hook: metro.html?capture=1
+    if(location.search.includes('capture')){
+      window.__turbometro = {
+        stations: SCENE.stations.map(s=>({id:s.id,label:s.label})),
+        spawn:(id,label)=>spawnRide(id,label||id),
+      };
+    }
   </script>
 </body>
 </html>
