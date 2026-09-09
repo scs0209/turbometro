@@ -20,11 +20,13 @@ function parseArgs(argv: string[]): CliOptions {
     demo: false,
     replayPath: null,
     force: false,
+    deep: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--demo') opts.demo = true;
     else if (a === '--force') opts.force = true;
+    else if (a === '--deep') opts.deep = true;
     else if (a === '--out') opts.out = path.resolve(argv[++i] ?? 'metro.html');
     else if (a === '--replay')
       opts.replayPath = path.resolve(argv[++i] ?? '');
@@ -45,7 +47,8 @@ Usage:
   turbometro --demo
 
 Just run inside a pnpm workspace (or pass --cwd). Auto-detects packages
-(including apps/** globs). turbo.json is optional — scripts are inferred.
+(apps/** ok; nested packages capped at depth 2 unless --deep).
+turbo.json is optional — scripts are inferred.
 Default trains are synthetic replay.
 `);
 }
@@ -73,7 +76,12 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     try {
-      graph = parseWorkspace(root);
+      graph = parseWorkspace(root, { deep: opts.deep });
+      if (!opts.deep) {
+        console.warn(
+          'turbometro: showing top-level workspace packages (depth≤2). Pass --deep for nested packages.',
+        );
+      }
       const parsed = parseTurbo(root, graph);
       turbo = parsed.tasks;
       if (parsed.source === 'inferred') {

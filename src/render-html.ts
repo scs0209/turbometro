@@ -56,13 +56,15 @@ export async function renderMetroHtml(opts: {
 }): Promise<string> {
   const { layoutMetro } = await loadVendor();
   const dag = toDagMapInput(opts.graph);
+  const n = opts.graph.nodes.length;
+  // denser monorepos need tighter layout so the maquette stays one composition
   const layout = layoutMetro(dag, {
     routing: 'angular',
     theme: TRANSIT_LAYOUT_THEME,
-    scale: 2.15,
-    layerSpacing: 48,
-    mainSpacing: 46,
-    subSpacing: 22,
+    scale: n > 20 ? 1.55 : n > 12 ? 1.85 : 2.15,
+    layerSpacing: n > 20 ? 36 : n > 12 ? 42 : 48,
+    mainSpacing: n > 20 ? 34 : n > 12 ? 40 : 46,
+    subSpacing: n > 20 ? 16 : 22,
   });
 
   const scene = buildSceneData({
@@ -137,7 +139,7 @@ export async function renderMetroHtml(opts: {
         <div><strong>${railCount}</strong>rails</div>
         <div><strong id="stat-ride">0</strong>active</div>
       </div>
-      <div class="hint">click station · drag orbit · scroll zoom</div>
+      <div class="hint">click hub · zoom for all labels · drag orbit</div>
     </div>
     <footer class="bottom">
       <div class="chips">${taskChips(opts.turbo)}</div>
@@ -165,15 +167,15 @@ export async function renderMetroHtml(opts: {
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x12151a);
-    scene.fog = new THREE.Fog(0x12151a, 28, 70);
+    scene.fog = new THREE.Fog(0x12151a, 40, 140);
 
-    const camera = new THREE.PerspectiveCamera(36, view.clientWidth / view.clientHeight, 0.1, 200);
+    const camera = new THREE.PerspectiveCamera(36, view.clientWidth / view.clientHeight, 0.1, 400);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.maxPolarAngle = Math.PI * 0.45;
-    controls.minDistance = 8;
-    controls.maxDistance = 40;
+    controls.maxPolarAngle = Math.PI * 0.48;
+    controls.minDistance = 6;
+    controls.maxDistance = 120;
 
     scene.add(new THREE.HemisphereLight(0xb8c4d4, 0x2a2e36, 0.55));
     const sun = new THREE.DirectionalLight(0xf0f2f5, 1.35);
@@ -181,8 +183,8 @@ export async function renderMetroHtml(opts: {
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.near = 2; sun.shadow.camera.far = 80;
-    sun.shadow.camera.left = sun.shadow.camera.bottom = -30;
-    sun.shadow.camera.right = sun.shadow.camera.top = 30;
+    sun.shadow.camera.left = sun.shadow.camera.bottom = -50;
+    sun.shadow.camera.right = sun.shadow.camera.top = 50;
     sun.shadow.bias = -0.0002;
     scene.add(sun);
     const fill = new THREE.DirectionalLight(0x6a7a90, 0.45);
@@ -190,13 +192,19 @@ export async function renderMetroHtml(opts: {
 
     const allX = SCENE.stations.map(s => s.x);
     const allZ = SCENE.stations.map(s => s.z);
-    const cx = (Math.min(...allX) + Math.max(...allX)) / 2 || 0;
-    const cz = (Math.min(...allZ) + Math.max(...allZ)) / 2 || 0;
-    const span = Math.max(Math.max(...allX) - Math.min(...allX), Math.max(...allZ) - Math.min(...allZ), 8);
-    const islandR = span * 0.055 * 0.55 + 6.8;
+    const minX = Math.min(...allX), maxX = Math.max(...allX);
+    const minZ = Math.min(...allZ), maxZ = Math.max(...allZ);
+    const cx = (minX + maxX) / 2 || 0;
+    const cz = (minZ + maxZ) / 2 || 0;
+    const spanX = Math.max(maxX - minX, 6);
+    const spanZ = Math.max(maxZ - minZ, 6);
+    const pad = 3.2;
+    const slabW = spanX + pad * 2;
+    const slabD = spanZ + pad * 2;
     function world(p) { return new THREE.Vector3(p.x - cx, p.y, p.z - cz); }
     function mulberry32(a){return function(){let t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
     const rnd = mulberry32(SCENE.stations.length * 9973 + SCENE.rails.length * 17);
+    const dense = SCENE.stations.length > 14;
 
     const mats = {
       slab: new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.82, metalness: 0.12 }),
@@ -222,28 +230,29 @@ export async function renderMetroHtml(opts: {
     const worldRoot = new THREE.Group();
     scene.add(worldRoot);
 
-    // Architectural maquette base — concrete slab, not toy island
-    const cliff = new THREE.Mesh(new THREE.BoxGeometry(islandR*2.05, 1.1, islandR*2.05), mats.edge);
-    cliff.position.y = -0.55; cliff.castShadow = true; cliff.receiveShadow = true; worldRoot.add(cliff);
-    const top = new THREE.Mesh(new THREE.BoxGeometry(islandR*2, 0.22, islandR*2), mats.slab);
+    // Architectural maquette base — AABB slab fitted to the network (not a huge empty square)
+    const cliff = new THREE.Mesh(new THREE.BoxGeometry(slabW*1.04, 1.0, slabD*1.04), mats.edge);
+    cliff.position.y = -0.5; cliff.castShadow = true; cliff.receiveShadow = true; worldRoot.add(cliff);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(slabW, 0.2, slabD), mats.slab);
     top.position.y = 0.05; top.receiveShadow = true; top.castShadow = true; worldRoot.add(top);
-    const pedestal = new THREE.Mesh(new THREE.BoxGeometry(islandR*1.15, 0.45, islandR*1.15), mats.dark);
-    pedestal.position.y = -1.25; pedestal.castShadow = true; worldRoot.add(pedestal);
+    const pedestal = new THREE.Mesh(new THREE.BoxGeometry(slabW*0.55, 0.4, slabD*0.55), mats.dark);
+    pedestal.position.y = -1.15; pedestal.castShadow = true; worldRoot.add(pedestal);
 
-    // sparse volume blocks (massing study, not candy houses)
     function building(x,z,w,d,h,mi){
       const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mats.buildings[mi%mats.buildings.length]);
       mesh.position.set(x,h/2+0.16,z); mesh.castShadow=true; mesh.receiveShadow=true;
       const win=new THREE.Mesh(new THREE.BoxGeometry(w*0.72,h*0.55,0.03), mats.glass);
       win.position.set(0,0.02,d/2+0.02); mesh.add(win); return mesh;
     }
-    for(let i=0;i<18;i++){
-      const a=rnd()*Math.PI*2, r=islandR*(0.35+rnd()*0.5);
-      const x=Math.cos(a)*r, z=Math.sin(a)*r;
-      let ok=true;
-      for(const st of SCENE.stations){ const p=world(st); if(Math.hypot(p.x-x,p.z-z)<1.8){ok=false;break;} }
-      if(!ok) continue;
-      worldRoot.add(building(x,z, 0.45+rnd()*0.7, 0.4+rnd()*0.55, 0.7+rnd()*2.2, Math.floor(rnd()*5)));
+    // only a few background masses on small maps — dense graphs stay readable
+    if(!dense){
+      for(let i=0;i<10;i++){
+        const x=(rnd()-0.5)*slabW*0.7, z=(rnd()-0.5)*slabD*0.7;
+        let ok=true;
+        for(const st of SCENE.stations){ const p=world(st); if(Math.hypot(p.x-x,p.z-z)<2.0){ok=false;break;} }
+        if(!ok) continue;
+        worldRoot.add(building(x,z, 0.4+rnd()*0.55, 0.35+rnd()*0.45, 0.6+rnd()*1.6, Math.floor(rnd()*5)));
+      }
     }
 
     const railY = 1.05;
@@ -297,18 +306,19 @@ export async function renderMetroHtml(opts: {
       glow.position.copy(beacon.position); g.add(glow);
       g.userData.neonMats=[ring.material, ringInner.material, accent.material, beacon.material];
       g.userData.glow=glow;
-      const nBuild=st.interchange?3:2;
+      // quiet default massing so empty rings don't look unfinished
+      g.add(building(0.85,0.55, 0.32,0.28, 0.55+rnd()*0.45, Math.floor(rnd()*5)));
+      const nBuild=st.interchange?2:1;
       const props=[];
       for(let i=0;i<nBuild;i++){
-        const ang=(i/nBuild)*Math.PI*2+0.4, rr=1.55+rnd()*0.35;
-        const b=building(Math.cos(ang)*rr, Math.sin(ang)*rr, 0.4+rnd()*0.35, 0.35+rnd()*0.25, 0.9+rnd()*1.6, Math.floor(rnd()*5));
+        const ang=(i/nBuild)*Math.PI*2+0.6, rr=1.35+rnd()*0.25;
+        const b=building(Math.cos(ang)*rr, Math.sin(ang)*rr, 0.35+rnd()*0.3, 0.3+rnd()*0.22, 0.8+rnd()*1.2, Math.floor(rnd()*5));
         b.userData.baseY=b.position.y;
         b.userData.baseScale=1;
         b.scale.setScalar(0);
         b.visible=false;
         props.push(b); g.add(b);
       }
-      // platform kit pieces also stagger in on first visit
       [accent, canopy, mast, beacon].forEach(piece=>{
         piece.userData.baseY=piece.position.y;
         piece.userData.baseScale=1;
@@ -318,16 +328,23 @@ export async function renderMetroHtml(opts: {
       });
       g.userData.props=props;
       g.userData.revealed=false;
+      g.userData.prominent=!!st.prominent;
       const canvas=document.createElement('canvas'); canvas.width=256; canvas.height=64;
       const ctx=canvas.getContext('2d');
-      ctx.fillStyle='rgba(10,12,16,0.9)';
+      ctx.fillStyle='rgba(10,12,16,0.92)';
       if(ctx.roundRect){ctx.roundRect(10,14,236,36,8);ctx.fill()} else ctx.fillRect(10,14,236,36);
-      ctx.strokeStyle=st.color; ctx.lineWidth=3;
+      ctx.strokeStyle=st.color; ctx.lineWidth=2;
       if(ctx.roundRect){ctx.beginPath();ctx.roundRect(10,14,236,36,8);ctx.stroke()}
-      ctx.font='700 22px IBM Plex Mono, monospace'; ctx.fillStyle=st.color; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.font='700 20px IBM Plex Mono, monospace'; ctx.fillStyle=st.color; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(st.label,128,34);
-      const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas), transparent:true, depthTest:false}));
-      sprite.scale.set(2.15,0.54,1); sprite.position.set(0,2.1,0); g.add(sprite);
+      const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas), transparent:true, depthTest:false, depthWrite:false}));
+      const lift=1.7 + (st.degree%3)*0.25;
+      sprite.scale.set(st.prominent?1.9:1.55, st.prominent?0.48:0.4, 1);
+      sprite.position.set(0, lift, 0);
+      sprite.userData.isLabel=true;
+      sprite.visible = !!st.prominent; // hubs/apps only until zoomed
+      g.userData.labelSprite=sprite;
+      g.add(sprite);
       stationMeshes.push(g); worldRoot.add(g);
     }
 
@@ -606,8 +623,11 @@ export async function renderMetroHtml(opts: {
     const center=box.getCenter(new THREE.Vector3());
     const size=box.getSize(new THREE.Vector3());
     controls.target.copy(center);
-    const dist=Math.max(size.x,size.z,10)*1.2;
-    camera.position.set(center.x+dist*0.9, center.y+dist*0.78, center.z+dist*0.72);
+    const dist=Math.max(size.x, size.z, 10) * (dense ? 0.95 : 1.15);
+    camera.position.set(center.x+dist*0.85, center.y+dist*0.72, center.z+dist*0.95);
+    controls.maxDistance = Math.max(40, dist * 2.4);
+    scene.fog.near = dist * 0.9;
+    scene.fog.far = dist * 3.2;
     controls.update();
     const homeCam=camera.position.clone(), homeTarget=controls.target.clone();
 
@@ -649,11 +669,16 @@ export async function renderMetroHtml(opts: {
     (function tick(){
       const t=clock.getElapsedTime();
       controls.update();
+      const camDist = camera.position.distanceTo(controls.target);
+      const showAllLabels = camDist < Math.max(14, dist * 0.55);
       for(const s of stationMeshes){
         const pulse=0.85+0.15*Math.sin(t*2.2 + s.position.x);
         const sel=s.userData.stationId===selectedId;
         if(s.userData.neonMats[1]) s.userData.neonMats[1].emissiveIntensity=(sel?3.4:2.1)*pulse;
         if(s.userData.glow) s.userData.glow.intensity=(sel?1.35:0.55)*(0.9+0.1*Math.sin(t*3+s.position.z));
+        if(s.userData.labelSprite){
+          s.userData.labelSprite.visible = sel || s.userData.prominent || showAllLabels;
+        }
       }
       if(activeTrain){
         const tr=activeTrain;

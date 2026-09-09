@@ -30,4 +30,6 @@ export type CliOptions = {
   demo: boolean;
   replayPath: string | null;
   force: boolean;
+  /** Include nested packages beyond apps/* / packages/* (depth > 2) */
+  deep: boolean;
 };

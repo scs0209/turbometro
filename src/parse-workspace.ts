@@ -48,29 +48,56 @@ function isWorkspaceDep(spec: string, workspaceNames: Set<string>): boolean {
   return workspaceNames.has(spec);
 }
 
+export type ExpandOpts = {
+  /** Max path depth from workspace root (apps/web = 2). Default 2 keeps maps readable. */
+  maxDepth?: number;
+  workspaceRoot?: string;
+};
+
 /** Collect package roots under absBase (dirs with package.json). */
-export function findPackageDirs(absBase: string, recursive: boolean): string[] {
+export function findPackageDirs(
+  absBase: string,
+  recursive: boolean,
+  opts: ExpandOpts = {},
+): string[] {
   if (!fs.existsSync(absBase)) return [];
   const out: string[] = [];
+  const wsRoot = opts.workspaceRoot ?? absBase;
+  const maxDepth = opts.maxDepth ?? Infinity;
+
+  function depthOf(dir: string): number {
+    const rel = path.relative(wsRoot, dir);
+    if (!rel || rel === '.') return 0;
+    return rel.split(path.sep).filter(Boolean).length;
+  }
 
   if (!recursive) {
     return fs
       .readdirSync(absBase, { withFileTypes: true })
       .filter((d) => d.isDirectory() && !SKIP_DIRS.has(d.name))
       .map((d) => path.join(absBase, d.name))
-      .filter((dir) => fs.existsSync(path.join(dir, 'package.json')));
+      .filter((dir) => {
+        if (depthOf(dir) > maxDepth) return false;
+        return fs.existsSync(path.join(dir, 'package.json'));
+      });
   }
 
   function walk(dir: string): void {
+    const depth = depthOf(dir);
     let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
     }
-    if (fs.existsSync(path.join(dir, 'package.json'))) {
+    if (
+      depth > 0 &&
+      depth <= maxDepth &&
+      fs.existsSync(path.join(dir, 'package.json'))
+    ) {
       out.push(dir);
     }
+    if (depth >= maxDepth) return;
     for (const d of entries) {
       if (!d.isDirectory()) continue;
       if (SKIP_DIRS.has(d.name)) continue;
@@ -86,17 +113,23 @@ export function findPackageDirs(absBase: string, recursive: boolean): string[] {
  * Expand a pnpm-workspace packages pattern.
  * Supports: `apps`, `apps/*`, `apps/**`, `apps/**\/*`, `packages/*`.
  */
-export function expandGlob(root: string, pattern: string): string[] {
+export function expandGlob(
+  root: string,
+  pattern: string,
+  opts: ExpandOpts = {},
+): string[] {
   const cleaned = pattern.replace(/\/+$/, '');
+  const expandOpts: ExpandOpts = {
+    maxDepth: opts.maxDepth ?? 2,
+    workspaceRoot: root,
+  };
   if (!cleaned.includes('*')) {
     const abs = path.join(root, cleaned);
     if (!fs.existsSync(abs)) return [];
-    // bare dir: treat as recursive package roots (pnpm allows this)
-    return findPackageDirs(abs, true);
+    return findPackageDirs(abs, true, expandOpts);
   }
 
   const recursive = cleaned.includes('**');
-  // apps/*, apps/**, apps/**/*, packages/**
   const base = cleaned
     .replace(/\/\*\*\/\*$/, '')
     .replace(/\/\*\*$/, '')
@@ -104,10 +137,17 @@ export function expandGlob(root: string, pattern: string): string[] {
     .replace(/\*\*$/, '')
     .replace(/\*$/, '');
   const absBase = path.join(root, base || '.');
-  return findPackageDirs(absBase, recursive || cleaned.endsWith('/**'));
+  return findPackageDirs(
+    absBase,
+    recursive || cleaned.endsWith('/**'),
+    expandOpts,
+  );
 }
 
-export function parseWorkspace(root: string): Graph {
+export function parseWorkspace(
+  root: string,
+  opts: { deep?: boolean } = {},
+): Graph {
   const wsPath = path.join(root, 'pnpm-workspace.yaml');
   if (!fs.existsSync(wsPath)) {
     throw new Error(`Missing pnpm-workspace.yaml in ${root}`);
@@ -118,8 +158,9 @@ export function parseWorkspace(root: string): Graph {
   }
 
   const seen = new Set<string>();
+  const maxDepth = opts.deep ? 8 : 2;
   const dirs = patterns
-    .flatMap((p) => expandGlob(root, p))
+    .flatMap((p) => expandGlob(root, p, { maxDepth, workspaceRoot: root }))
     .filter((dir) => {
       const key = path.resolve(dir);
       if (seen.has(key)) return false;

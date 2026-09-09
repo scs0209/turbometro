@@ -18,6 +18,9 @@ export type SceneData = {
     z: number;
     color: string;
     interchange: boolean;
+    /** apps or hubs — always show label */
+    prominent: boolean;
+    degree: number;
   }>;
   rails: Array<{
     points: ScenePoint[];
@@ -149,12 +152,15 @@ export function buildSceneData(opts: {
 
   const stations = graph.nodes.map((n) => {
     const p = layout.positions.get(n.name)!;
+    const degree = deg.get(n.name) ?? 0;
     return {
       id: n.name,
       label: shortLabel(n.name),
       ...to3(p.x, p.y, 0.35, scale),
       color: KIND_COLOR[n.kind] ?? '#4C8DFF',
-      interchange: (deg.get(n.name) ?? 0) >= 2,
+      interchange: degree >= 2,
+      prominent: n.kind === 'apps' || degree >= 2,
+      degree,
     };
   });
 
