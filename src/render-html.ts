@@ -88,8 +88,8 @@ export async function renderMetroHtml(opts: {
   {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
   </script>
   <style>
-    :root{--bg:#87b8dc;--panel:rgba(18,24,32,.88);--ink:#f4f7fb;--muted:#c5d0de;--border:#2c3a4d;--accent:#3DDC97;--accent-2:#4C8DFF}
-    *{box-sizing:border-box} html,body{height:100%;margin:0;background:linear-gradient(#9ec8e8,#87b8dc 40%,#6fa0c4);color:var(--ink);font-family:Syne,system-ui,sans-serif;overflow:hidden}
+    :root{--bg:#0c0e12;--panel:rgba(14,16,20,.92);--ink:#e6e9ef;--muted:#8b93a1;--border:#2a303b;--accent:#5b8def;--accent-2:#8fa3bf}
+    *{box-sizing:border-box} html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:Syne,system-ui,sans-serif;overflow:hidden}
     .app{height:100%;display:grid;grid-template-rows:auto 1fr auto}
     .top,.bottom{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.7rem 1rem;background:var(--panel);backdrop-filter:blur(12px);z-index:2}
     .top{border-bottom:1px solid var(--border)}.bottom{border-top:1px solid var(--border);flex-wrap:wrap}
@@ -110,7 +110,7 @@ export async function renderMetroHtml(opts: {
     .chip{display:inline-flex;align-items:center;gap:.3rem;font-family:"IBM Plex Mono",monospace;font-size:.68rem;border:1px solid var(--border);padding:.18rem .45rem;color:var(--muted)}
     .chip i{width:.9rem;height:.22rem;display:inline-block}
     .note{font-family:"IBM Plex Mono",monospace;font-size:.62rem;color:var(--muted);max-width:26rem;line-height:1.4}
-    #boot{position:absolute;inset:0;display:grid;place-items:center;background:#87b8dc;z-index:3;font-family:"IBM Plex Mono",monospace;font-size:.78rem;color:#1a3044}
+    #boot{position:absolute;inset:0;display:grid;place-items:center;background:#0c0e12;z-index:3;font-family:"IBM Plex Mono",monospace;font-size:.78rem;color:#8b93a1}
   </style>
 </head>
 <body>
@@ -126,17 +126,17 @@ export async function renderMetroHtml(opts: {
       </div>
     </header>
     <div id="view">
-      <div id="boot">building mini world…</div>
+      <div id="boot">loading model…</div>
       <div class="hud">
-        <h1>Mini metro world</h1>
-        <p>Diorama island · elevated rails · orbit to explore</p>
+        <h1>Architecture model</h1>
+        <p>Scale maquette · elevated network · orbit to inspect</p>
       </div>
       <div class="stats">
         <div><strong>${stationCount}</strong>stations</div>
         <div><strong>${railCount}</strong>rails</div>
         <div><strong>${scene.trains.length}</strong>trains</div>
       </div>
-      <div class="hint">drag · scroll · miniature city</div>
+      <div class="hint">drag · scroll · architectural model</div>
     </div>
     <footer class="bottom">
       <div class="chips">${taskChips(opts.turbo)}</div>
@@ -163,8 +163,8 @@ export async function renderMetroHtml(opts: {
     view.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x9ec8e8);
-    scene.fog = new THREE.Fog(0xb7d6ec, 24, 58);
+    scene.background = new THREE.Color(0x12151a);
+    scene.fog = new THREE.Fog(0x12151a, 28, 70);
 
     const camera = new THREE.PerspectiveCamera(36, view.clientWidth / view.clientHeight, 0.1, 200);
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -174,8 +174,8 @@ export async function renderMetroHtml(opts: {
     controls.minDistance = 8;
     controls.maxDistance = 40;
 
-    scene.add(new THREE.HemisphereLight(0xfff1d6, 0x6f9e5c, 0.95));
-    const sun = new THREE.DirectionalLight(0xfff6e8, 1.6);
+    scene.add(new THREE.HemisphereLight(0xb8c4d4, 0x2a2e36, 0.55));
+    const sun = new THREE.DirectionalLight(0xf0f2f5, 1.35);
     sun.position.set(14, 24, 12);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -184,7 +184,7 @@ export async function renderMetroHtml(opts: {
     sun.shadow.camera.right = sun.shadow.camera.top = 30;
     sun.shadow.bias = -0.0002;
     scene.add(sun);
-    const fill = new THREE.DirectionalLight(0xa8c8ff, 0.4);
+    const fill = new THREE.DirectionalLight(0x6a7a90, 0.45);
     fill.position.set(-14, 10, -8); scene.add(fill);
 
     const allX = SCENE.stations.map(s => s.x);
@@ -198,60 +198,43 @@ export async function renderMetroHtml(opts: {
     const rnd = mulberry32(SCENE.stations.length * 9973 + SCENE.rails.length * 17);
 
     const mats = {
-      dirt: new THREE.MeshStandardMaterial({ color: 0xc4a574, roughness: 0.92 }),
-      grass: new THREE.MeshStandardMaterial({ color: 0x6fbf6a, roughness: 0.88 }),
-      grass2: new THREE.MeshStandardMaterial({ color: 0x58a85a, roughness: 1 }),
-      water: new THREE.MeshStandardMaterial({ color: 0x5eb3e8, roughness: 0.12, metalness: 0.4, transparent: true, opacity: 0.9 }),
-      road: new THREE.MeshStandardMaterial({ color: 0x5c6570, roughness: 0.85 }),
-      plaza: new THREE.MeshStandardMaterial({ color: 0xe8e0d4, roughness: 0.75 }),
-      concrete: new THREE.MeshStandardMaterial({ color: 0xd9d2c5, roughness: 0.8 }),
-      trunk: new THREE.MeshStandardMaterial({ color: 0x8b5a3c, roughness: 0.9 }),
-      leaf: new THREE.MeshStandardMaterial({ color: 0x3f9e4a, roughness: 0.75 }),
-      dark: new THREE.MeshStandardMaterial({ color: 0x2a3038, roughness: 0.55, metalness: 0.25 }),
-      buildings: [0xf2d6c2,0xdfe9f2,0xf7e7a8,0xc9e4d2,0xffd5c8,0xe8d5f0].map(c =>
-        new THREE.MeshStandardMaterial({ color: c, roughness: 0.68 }))
+      slab: new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.82, metalness: 0.12 }),
+      edge: new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.75, metalness: 0.2 }),
+      asphalt: new THREE.MeshStandardMaterial({ color: 0x3a4048, roughness: 0.9, metalness: 0.05 }),
+      plaza: new THREE.MeshStandardMaterial({ color: 0x4a5058, roughness: 0.7, metalness: 0.15 }),
+      concrete: new THREE.MeshStandardMaterial({ color: 0x6a7078, roughness: 0.65, metalness: 0.18 }),
+      steel: new THREE.MeshStandardMaterial({ color: 0x8a929c, roughness: 0.35, metalness: 0.75 }),
+      glass: new THREE.MeshStandardMaterial({ color: 0x1c2836, roughness: 0.15, metalness: 0.85, transparent: true, opacity: 0.85 }),
+      dark: new THREE.MeshStandardMaterial({ color: 0x14171c, roughness: 0.6, metalness: 0.3 }),
+      buildings: [0x3d434c,0x2f353d,0x454c56,0x252a31,0x505862].map(c =>
+        new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, metalness: 0.25 }))
     };
 
     const worldRoot = new THREE.Group();
     scene.add(worldRoot);
 
-    const cliff = new THREE.Mesh(new THREE.CylinderGeometry(islandR*1.02, islandR*1.14, 2.0, 64, 1, true), mats.dirt);
-    cliff.position.y = -1.05; cliff.castShadow = true; cliff.receiveShadow = true; worldRoot.add(cliff);
-    const top = new THREE.Mesh(new THREE.CylinderGeometry(islandR, islandR, 0.38, 64), mats.grass);
-    top.position.y = 0; top.receiveShadow = true; top.castShadow = true; worldRoot.add(top);
-    const water = new THREE.Mesh(new THREE.RingGeometry(islandR*1.08, islandR*1.4, 64), mats.water);
-    water.rotation.x = -Math.PI/2; water.position.y = -1.65; worldRoot.add(water);
-    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(islandR*0.5, islandR*0.68, 0.6, 48), mats.dark);
-    pedestal.position.y = -2.2; pedestal.castShadow = true; worldRoot.add(pedestal);
+    // Architectural maquette base — concrete slab, not toy island
+    const cliff = new THREE.Mesh(new THREE.BoxGeometry(islandR*2.05, 1.1, islandR*2.05), mats.edge);
+    cliff.position.y = -0.55; cliff.castShadow = true; cliff.receiveShadow = true; worldRoot.add(cliff);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(islandR*2, 0.22, islandR*2), mats.slab);
+    top.position.y = 0.05; top.receiveShadow = true; top.castShadow = true; worldRoot.add(top);
+    const pedestal = new THREE.Mesh(new THREE.BoxGeometry(islandR*1.15, 0.45, islandR*1.15), mats.dark);
+    pedestal.position.y = -1.25; pedestal.castShadow = true; worldRoot.add(pedestal);
 
-    for (let i=0;i<8;i++){
-      const a=rnd()*Math.PI*2, r=islandR*(0.2+rnd()*0.55);
-      const patch=new THREE.Mesh(new THREE.CircleGeometry(0.6+rnd()*1.2, 18), mats.grass2);
-      patch.rotation.x=-Math.PI/2; patch.position.set(Math.cos(a)*r, 0.2, Math.sin(a)*r); worldRoot.add(patch);
+    // sparse volume blocks (massing study, not candy houses)
+    function building(x,z,w,d,h,mi){
+      const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mats.buildings[mi%mats.buildings.length]);
+      mesh.position.set(x,h/2+0.16,z); mesh.castShadow=true; mesh.receiveShadow=true;
+      const win=new THREE.Mesh(new THREE.BoxGeometry(w*0.72,h*0.55,0.03), mats.glass);
+      win.position.set(0,0.02,d/2+0.02); mesh.add(win); return mesh;
     }
-
-    function tree(x,z,s=1){
-      const g=new THREE.Group();
-      const tr=new THREE.Mesh(new THREE.CylinderGeometry(0.05*s,0.07*s,0.35*s,6), mats.trunk);
-      tr.position.y=0.18*s; tr.castShadow=true; g.add(tr);
-      const lf=new THREE.Mesh(new THREE.SphereGeometry(0.22*s,10,10), mats.leaf);
-      lf.position.y=0.45*s; lf.castShadow=true; g.add(lf);
-      g.position.set(x,0.19,z); return g;
-    }
-    for(let i=0;i<32;i++){
-      const a=rnd()*Math.PI*2, r=islandR*(0.32+rnd()*0.55);
+    for(let i=0;i<18;i++){
+      const a=rnd()*Math.PI*2, r=islandR*(0.35+rnd()*0.5);
       const x=Math.cos(a)*r, z=Math.sin(a)*r;
       let ok=true;
-      for(const st of SCENE.stations){ const p=world(st); if(Math.hypot(p.x-x,p.z-z)<1.45){ok=false;break;} }
-      if(ok) worldRoot.add(tree(x,z,0.65+rnd()*0.8));
-    }
-
-    function building(x,z,w,d,h,mi){
-      const mesh=new THREE.Mesh(new RoundedBoxGeometry(w,h,d,1,0.04), mats.buildings[mi%mats.buildings.length]);
-      mesh.position.set(x,h/2+0.19,z); mesh.castShadow=true; mesh.receiveShadow=true;
-      const win=new THREE.Mesh(new THREE.BoxGeometry(w*0.65,h*0.5,0.02),
-        new THREE.MeshStandardMaterial({color:0x9fd0ff, emissive:0x3a6fa0, emissiveIntensity:0.18, roughness:0.3}));
-      win.position.set(0,0.04,d/2+0.01); mesh.add(win); return mesh;
+      for(const st of SCENE.stations){ const p=world(st); if(Math.hypot(p.x-x,p.z-z)<1.8){ok=false;break;} }
+      if(!ok) continue;
+      worldRoot.add(building(x,z, 0.45+rnd()*0.7, 0.4+rnd()*0.55, 0.7+rnd()*2.2, Math.floor(rnd()*5)));
     }
 
     const railY = 1.05;
@@ -264,37 +247,38 @@ export async function renderMetroHtml(opts: {
       const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, segs, radius, 12, false),
         new THREE.MeshStandardMaterial({ color: new THREE.Color(rail.color), metalness:0.3, roughness:0.35, emissive:new THREE.Color(rail.color), emissiveIntensity:0.2 }));
       tube.castShadow=true; tube.receiveShadow=true; worldRoot.add(tube);
-      const deck = new THREE.Mesh(new THREE.TubeGeometry(curve, segs, radius*1.9, 8, false), mats.concrete);
+      const deck = new THREE.Mesh(new THREE.TubeGeometry(curve, segs, radius*1.75, 8, false), mats.steel);
       deck.position.y=-0.05; deck.castShadow=true; worldRoot.add(deck);
       const n = Math.max(3, Math.floor(curve.getLength()/1.55));
       for(let i=0;i<=n;i++){
         const p=curve.getPointAt(i/n);
-        const pillar=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,Math.max(0.2,p.y-0.19),8), mats.concrete);
+        const pillar=new THREE.Mesh(new THREE.BoxGeometry(0.1,Math.max(0.2,p.y-0.19),0.1), mats.concrete);
         pillar.position.set(p.x,(p.y-0.19)/2+0.19,p.z); pillar.castShadow=true; worldRoot.add(pillar);
       }
     }
 
     for (const st of SCENE.stations) {
       const g=new THREE.Group(); const p=world(st); g.position.set(p.x,0.19,p.z);
-      const plaza=new THREE.Mesh(new THREE.CylinderGeometry(st.interchange?1.2:0.95, st.interchange?1.25:1.0, 0.12, 24), mats.plaza);
+      const plaza=new THREE.Mesh(new THREE.BoxGeometry(st.interchange?2.0:1.55, 0.08, st.interchange?2.0:1.55), mats.asphalt);
       plaza.receiveShadow=true; plaza.castShadow=true; g.add(plaza);
-      const platform=new THREE.Mesh(new RoundedBoxGeometry(st.interchange?1.45:1.1, 0.14, 0.55, 1, 0.04), mats.concrete);
+      const platform=new THREE.Mesh(new THREE.BoxGeometry(st.interchange?1.5:1.15, 0.12, 0.5), mats.concrete);
       platform.position.y=railY-0.35; platform.castShadow=true; g.add(platform);
-      const canopy=new THREE.Mesh(new RoundedBoxGeometry(st.interchange?1.25:0.95, 0.07, 0.52, 1, 0.03),
-        new THREE.MeshStandardMaterial({ color:new THREE.Color(st.color), roughness:0.45, metalness:0.15, emissive:new THREE.Color(st.color), emissiveIntensity:0.22 }));
-      canopy.position.y=railY+0.18; canopy.castShadow=true; g.add(canopy);
-      const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,1.15,8), mats.concrete);
-      pole.position.set(0.58,0.58,0.38); pole.castShadow=true; g.add(pole);
-      const nBuild=st.interchange?5:3;
+      const canopy=new THREE.Mesh(new THREE.BoxGeometry(st.interchange?1.3:1.0, 0.05, 0.48), mats.steel);
+      canopy.position.y=railY+0.2; canopy.castShadow=true; g.add(canopy);
+      // accent line under canopy
+      const accent=new THREE.Mesh(new THREE.BoxGeometry(st.interchange?1.3:1.0, 0.03, 0.04),
+        new THREE.MeshStandardMaterial({ color:new THREE.Color(st.color), emissive:new THREE.Color(st.color), emissiveIntensity:0.45, roughness:0.4 }));
+      accent.position.y=railY+0.16; g.add(accent);
+      const nBuild=st.interchange?3:2;
       for(let i=0;i<nBuild;i++){
-        const ang=(i/nBuild)*Math.PI*2+rnd(), rr=1.4+rnd()*0.5;
-        g.add(building(Math.cos(ang)*rr, Math.sin(ang)*rr, 0.35+rnd()*0.35, 0.3+rnd()*0.3, 0.55+rnd()*1.45, Math.floor(rnd()*6)));
+        const ang=(i/nBuild)*Math.PI*2+0.4, rr=1.55+rnd()*0.35;
+        g.add(building(Math.cos(ang)*rr, Math.sin(ang)*rr, 0.4+rnd()*0.35, 0.35+rnd()*0.25, 0.9+rnd()*1.6, Math.floor(rnd()*5)));
       }
       const canvas=document.createElement('canvas'); canvas.width=256; canvas.height=64;
       const ctx=canvas.getContext('2d');
-      ctx.fillStyle='rgba(255,255,255,0.94)';
+      ctx.fillStyle='rgba(18,20,24,0.92)';
       if(ctx.roundRect){ctx.roundRect(10,14,236,36,10);ctx.fill()} else ctx.fillRect(10,14,236,36);
-      ctx.font='700 22px IBM Plex Mono, monospace'; ctx.fillStyle='#1a2230'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.font='700 22px IBM Plex Mono, monospace'; ctx.fillStyle='#e6e9ef'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(st.label,128,34);
       const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas), transparent:true, depthTest:false}));
       sprite.scale.set(2.15,0.54,1); sprite.position.set(0,2.1,0); g.add(sprite);
@@ -312,17 +296,17 @@ export async function renderMetroHtml(opts: {
     function makeTrain(colorHex){
       const color=new THREE.Color(colorHex); const g=new THREE.Group();
       const body=new THREE.Mesh(new RoundedBoxGeometry(0.95,0.36,0.42,2,0.07),
-        new THREE.MeshStandardMaterial({color, metalness:0.2, roughness:0.35, emissive:color, emissiveIntensity:0.2}));
+        new THREE.MeshStandardMaterial({color, metalness:0.2, roughness:0.35, emissive:color, emissiveIntensity:0.08}));
       body.castShadow=true; g.add(body);
       const car2=new THREE.Mesh(new RoundedBoxGeometry(0.55,0.34,0.4,2,0.06),
         new THREE.MeshStandardMaterial({color:color.clone().offsetHSL(0,-0.05,0.06), roughness:0.35}));
       car2.position.x=-0.78; car2.castShadow=true; g.add(car2);
-      const winMat=new THREE.MeshStandardMaterial({color:0xeaf6ff, emissive:0x7eb6ff, emissiveIntensity:0.28, roughness:0.2});
+      const winMat=new THREE.MeshStandardMaterial({color:0xeaf6ff, emissive:0x7eb6ff, emissiveIntensity:0.12, roughness:0.25});
       [[0.15,0.06,0.22],[-0.2,0.06,0.22],[-0.78,0.06,0.21]].forEach(([x,y,z])=>{
         const w=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.12,0.02), winMat); w.position.set(x,y,z); g.add(w);
       });
       const light=new THREE.Mesh(new THREE.SphereGeometry(0.045,8,8),
-        new THREE.MeshStandardMaterial({color:0xfff2c4, emissive:0xffe08a, emissiveIntensity:1.3}));
+        new THREE.MeshStandardMaterial({color:0xfff2c4, emissive:0xffe08a, emissiveIntensity:0.6}));
       light.position.set(0.5,0,0); g.add(light); return g;
     }
 
@@ -362,8 +346,7 @@ export async function renderMetroHtml(opts: {
           tr.mesh.position.copy(p); tr.mesh.lookAt(look); tr.mesh.rotateY(Math.PI/2);
         }
       }
-      worldRoot.rotation.y = Math.sin(t*0.12)*0.015;
-      worldRoot.position.y = Math.sin(t*0.4)*0.025;
+      // static maquette — no toy bob
       renderer.render(scene,camera);
       requestAnimationFrame(tick);
     })();
