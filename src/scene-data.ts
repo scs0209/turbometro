@@ -125,9 +125,9 @@ function directedPoints(
 }
 
 const KIND_COLOR: Record<string, string> = {
-  apps: '#3DDC97',
-  packages: '#4C8DFF',
-  other: '#F5A200',
+  apps: '#39FF14',
+  packages: '#00F0FF',
+  other: '#FF2BD6',
 };
 
 export function buildSceneData(opts: {
@@ -167,34 +167,38 @@ export function buildSceneData(opts: {
     };
   });
 
+  // Ride catalog (one path per package) — viewer spawns a train only on station click.
   const byPkg = new Map<string, (typeof replay.events)[0]>();
   for (const ev of replay.events) {
     const prev = byPkg.get(ev.package);
     if (!prev || ev.status === 'running') byPkg.set(ev.package, ev);
   }
   const tasks = Object.keys(turbo);
-  const trains = [...byPkg.values()]
-    .map((ev, i) => {
-      const ends = shortestPathEndpoints(graph, ev.package);
-      if (!ends) return null;
-      const pts2 = directedPoints(layout, ends.from, ends.to);
-      if (pts2.length < 2) return null;
-      return {
-        id: `train-${i}`,
-        package: ev.package,
-        task: ev.task,
-        color: taskColor(ev.task, tasks),
-        points: pts2.map((p) => to3(p.x, p.y, 0.55, scale)),
-        speed: 0.08 + (i % 3) * 0.02,
-        phase: i * 0.22,
-      };
-    })
-    .filter(Boolean) as SceneData['trains'];
+  const primary =
+    tasks.includes('build') ? 'build' : tasks[0] ?? 'build';
+  const trains: SceneData['trains'] = [];
+  graph.nodes.forEach((n) => {
+    const ends = shortestPathEndpoints(graph, n.name);
+    if (!ends) return;
+    const pts2 = directedPoints(layout, ends.from, ends.to);
+    if (pts2.length < 2) return;
+    const ev = byPkg.get(n.name);
+    const task = ev?.task ?? primary;
+    trains.push({
+      id: `ride-${n.name}`,
+      package: n.name,
+      task,
+      color: taskColor(task, tasks),
+      points: pts2.map((p) => to3(p.x, p.y, 0.55, scale)),
+      speed: 0.22,
+      phase: 0,
+    });
+  });
 
   return {
     title,
     stations,
     rails: rails.filter((r) => r.points.length >= 2),
-    trains: trains.slice(0, 5),
+    trains,
   };
 }

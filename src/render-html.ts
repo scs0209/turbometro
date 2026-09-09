@@ -122,21 +122,22 @@ export async function renderMetroHtml(opts: {
       </div>
       <div class="toolbar">
         <button type="button" id="btn-play" aria-pressed="true">Pause</button>
+        <button type="button" id="btn-clear">Clear train</button>
         <button type="button" id="btn-reset">Reset cam</button>
       </div>
     </header>
     <div id="view">
       <div id="boot">loading model…</div>
       <div class="hud">
-        <h1>Architecture model</h1>
-        <p>Scale maquette · elevated network · orbit to inspect</p>
+        <h1 id="hud-title">Select a station</h1>
+        <p id="hud-sub">Click a neon stop · one train rides its dep path</p>
       </div>
       <div class="stats">
         <div><strong>${stationCount}</strong>stations</div>
         <div><strong>${railCount}</strong>rails</div>
-        <div><strong>${scene.trains.length}</strong>trains</div>
+        <div><strong id="stat-ride">0</strong>active</div>
       </div>
-      <div class="hint">drag · scroll · architectural model</div>
+      <div class="hint">click station · drag orbit · scroll zoom</div>
     </div>
     <footer class="bottom">
       <div class="chips">${taskChips(opts.turbo)}</div>
@@ -206,9 +207,17 @@ export async function renderMetroHtml(opts: {
       steel: new THREE.MeshStandardMaterial({ color: 0x8a929c, roughness: 0.35, metalness: 0.75 }),
       glass: new THREE.MeshStandardMaterial({ color: 0x1c2836, roughness: 0.15, metalness: 0.85, transparent: true, opacity: 0.85 }),
       dark: new THREE.MeshStandardMaterial({ color: 0x14171c, roughness: 0.6, metalness: 0.3 }),
+      road: new THREE.MeshStandardMaterial({ color: 0x32383f, roughness: 0.92, metalness: 0.08 }),
       buildings: [0x3d434c,0x2f353d,0x454c56,0x252a31,0x505862].map(c =>
         new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, metalness: 0.25 }))
     };
+    const rideByPkg = new Map(SCENE.trains.map(t => [t.package, t]));
+    const stationMeshes = [];
+    let activeTrain = null;
+    let selectedId = null;
+    const hudTitle = document.getElementById('hud-title');
+    const hudSub = document.getElementById('hud-sub');
+    const statRide = document.getElementById('stat-ride');
 
     const worldRoot = new THREE.Group();
     scene.add(worldRoot);
@@ -258,17 +267,36 @@ export async function renderMetroHtml(opts: {
     }
 
     for (const st of SCENE.stations) {
+      const neon = new THREE.Color(st.color);
       const g=new THREE.Group(); const p=world(st); g.position.set(p.x,0.19,p.z);
+      g.userData.stationId = st.id; g.userData.label = st.label; g.userData.color = st.color;
       const plaza=new THREE.Mesh(new THREE.BoxGeometry(st.interchange?2.0:1.55, 0.08, st.interchange?2.0:1.55), mats.asphalt);
-      plaza.receiveShadow=true; plaza.castShadow=true; g.add(plaza);
+      plaza.receiveShadow=true; plaza.castShadow=true; plaza.userData.pick=true; g.add(plaza);
+      // neon ground ring
+      const ring=new THREE.Mesh(new THREE.TorusGeometry(st.interchange?0.95:0.72, 0.035, 10, 48),
+        new THREE.MeshStandardMaterial({ color:neon, emissive:neon, emissiveIntensity:1.35, roughness:0.25, metalness:0.4 }));
+      ring.rotation.x=Math.PI/2; ring.position.y=0.06; ring.userData.pick=true; g.add(ring);
+      const ringInner=new THREE.Mesh(new THREE.TorusGeometry(st.interchange?0.55:0.42, 0.018, 8, 40),
+        new THREE.MeshStandardMaterial({ color:neon, emissive:neon, emissiveIntensity:2.1, roughness:0.2, metalness:0.35 }));
+      ringInner.rotation.x=Math.PI/2; ringInner.position.y=0.07; g.add(ringInner);
       const platform=new THREE.Mesh(new THREE.BoxGeometry(st.interchange?1.5:1.15, 0.12, 0.5), mats.concrete);
-      platform.position.y=railY-0.35; platform.castShadow=true; g.add(platform);
+      platform.position.y=railY-0.35; platform.castShadow=true; platform.userData.pick=true; g.add(platform);
       const canopy=new THREE.Mesh(new THREE.BoxGeometry(st.interchange?1.3:1.0, 0.05, 0.48), mats.steel);
       canopy.position.y=railY+0.2; canopy.castShadow=true; g.add(canopy);
-      // accent line under canopy
-      const accent=new THREE.Mesh(new THREE.BoxGeometry(st.interchange?1.3:1.0, 0.03, 0.04),
-        new THREE.MeshStandardMaterial({ color:new THREE.Color(st.color), emissive:new THREE.Color(st.color), emissiveIntensity:0.45, roughness:0.4 }));
+      const accent=new THREE.Mesh(new THREE.BoxGeometry(st.interchange?1.3:1.0, 0.04, 0.05),
+        new THREE.MeshStandardMaterial({ color:neon, emissive:neon, emissiveIntensity:1.8, roughness:0.25, metalness:0.45 }));
       accent.position.y=railY+0.16; g.add(accent);
+      // neon beacon mast
+      const mast=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.045,1.35,10),
+        new THREE.MeshStandardMaterial({ color:0x1a1e24, roughness:0.4, metalness:0.7 }));
+      mast.position.set(st.interchange?0.55:0.42, 0.75, 0.35); g.add(mast);
+      const beacon=new THREE.Mesh(new THREE.SphereGeometry(0.09,12,12),
+        new THREE.MeshStandardMaterial({ color:neon, emissive:neon, emissiveIntensity:2.4, roughness:0.15 }));
+      beacon.position.set(st.interchange?0.55:0.42, 1.45, 0.35); beacon.userData.pick=true; g.add(beacon);
+      const glow=new THREE.PointLight(neon, 0.55, 4.5, 2);
+      glow.position.copy(beacon.position); g.add(glow);
+      g.userData.neonMats=[ring.material, ringInner.material, accent.material, beacon.material];
+      g.userData.glow=glow;
       const nBuild=st.interchange?3:2;
       for(let i=0;i<nBuild;i++){
         const ang=(i/nBuild)*Math.PI*2+0.4, rr=1.55+rnd()*0.35;
@@ -276,13 +304,15 @@ export async function renderMetroHtml(opts: {
       }
       const canvas=document.createElement('canvas'); canvas.width=256; canvas.height=64;
       const ctx=canvas.getContext('2d');
-      ctx.fillStyle='rgba(18,20,24,0.92)';
-      if(ctx.roundRect){ctx.roundRect(10,14,236,36,10);ctx.fill()} else ctx.fillRect(10,14,236,36);
-      ctx.font='700 22px IBM Plex Mono, monospace'; ctx.fillStyle='#e6e9ef'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle='rgba(10,12,16,0.9)';
+      if(ctx.roundRect){ctx.roundRect(10,14,236,36,8);ctx.fill()} else ctx.fillRect(10,14,236,36);
+      ctx.strokeStyle=st.color; ctx.lineWidth=3;
+      if(ctx.roundRect){ctx.beginPath();ctx.roundRect(10,14,236,36,8);ctx.stroke()}
+      ctx.font='700 22px IBM Plex Mono, monospace'; ctx.fillStyle=st.color; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(st.label,128,34);
       const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas), transparent:true, depthTest:false}));
       sprite.scale.set(2.15,0.54,1); sprite.position.set(0,2.1,0); g.add(sprite);
-      worldRoot.add(g);
+      stationMeshes.push(g); worldRoot.add(g);
     }
 
     for(let i=0;i<SCENE.stations.length-1;i++){
@@ -296,26 +326,63 @@ export async function renderMetroHtml(opts: {
     function makeTrain(colorHex){
       const color=new THREE.Color(colorHex); const g=new THREE.Group();
       const body=new THREE.Mesh(new RoundedBoxGeometry(0.95,0.36,0.42,2,0.07),
-        new THREE.MeshStandardMaterial({color, metalness:0.2, roughness:0.35, emissive:color, emissiveIntensity:0.08}));
+        new THREE.MeshStandardMaterial({color, metalness:0.25, roughness:0.3, emissive:color, emissiveIntensity:0.35}));
       body.castShadow=true; g.add(body);
       const car2=new THREE.Mesh(new RoundedBoxGeometry(0.55,0.34,0.4,2,0.06),
-        new THREE.MeshStandardMaterial({color:color.clone().offsetHSL(0,-0.05,0.06), roughness:0.35}));
+        new THREE.MeshStandardMaterial({color:color.clone().offsetHSL(0,-0.05,0.06), roughness:0.35, emissive:color, emissiveIntensity:0.15}));
       car2.position.x=-0.78; car2.castShadow=true; g.add(car2);
-      const winMat=new THREE.MeshStandardMaterial({color:0xeaf6ff, emissive:0x7eb6ff, emissiveIntensity:0.12, roughness:0.25});
+      const winMat=new THREE.MeshStandardMaterial({color:0xeaf6ff, emissive:0x7eb6ff, emissiveIntensity:0.25, roughness:0.25});
       [[0.15,0.06,0.22],[-0.2,0.06,0.22],[-0.78,0.06,0.21]].forEach(([x,y,z])=>{
         const w=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.12,0.02), winMat); w.position.set(x,y,z); g.add(w);
       });
       const light=new THREE.Mesh(new THREE.SphereGeometry(0.045,8,8),
-        new THREE.MeshStandardMaterial({color:0xfff2c4, emissive:0xffe08a, emissiveIntensity:0.6}));
+        new THREE.MeshStandardMaterial({color:0xfff2c4, emissive:0xffe08a, emissiveIntensity:0.9}));
       light.position.set(0.5,0,0); g.add(light); return g;
     }
 
-    const trainActors = SCENE.trains.map(t => {
-      const pts=t.points.map(p=>{ const v=world(p); v.y=railY+0.24; return v; });
+    const clock=new THREE.Clock();
+
+    function clearTrain(){
+      if(!activeTrain) return;
+      worldRoot.remove(activeTrain.mesh);
+      activeTrain.mesh.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material){
+        if(Array.isArray(o.material)) o.material.forEach(m=>m.dispose()); else o.material.dispose();
+      }});
+      activeTrain=null; statRide.textContent='0';
+    }
+
+    function setSelection(stGroup){
+      for(const s of stationMeshes){
+        const on=s===stGroup;
+        if(s.userData.neonMats[0]) s.userData.neonMats[0].emissiveIntensity=on?2.8:1.35;
+        if(s.userData.neonMats[1]) s.userData.neonMats[1].emissiveIntensity=on?3.4:2.1;
+        if(s.userData.neonMats[2]) s.userData.neonMats[2].emissiveIntensity=on?3.0:1.8;
+        if(s.userData.neonMats[3]) s.userData.neonMats[3].emissiveIntensity=on?4.2:2.4;
+        if(s.userData.glow) s.userData.glow.intensity=on?1.35:0.55;
+      }
+    }
+
+    function spawnRide(pkgId, label){
+      clearTrain();
+      const ride=rideByPkg.get(pkgId);
+      selectedId=pkgId;
+      setSelection(stationMeshes.find(s=>s.userData.stationId===pkgId) || null);
+      if(!ride){
+        hudTitle.textContent=label;
+        hudSub.textContent='Terminal stop · no dep ride path';
+        return;
+      }
+      const pts=ride.points.map(p=>{ const v=world(p); v.y=railY+0.24; return v; });
       const curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',0.25);
-      const mesh=makeTrain(t.color); worldRoot.add(mesh);
-      return { curve, mesh, speed:t.speed*0.82, phase:t.phase };
-    });
+      const mesh=makeTrain(ride.color); worldRoot.add(mesh);
+      activeTrain={ curve, mesh, speed:ride.speed, t0:clock.getElapsedTime(), task:ride.task };
+      statRide.textContent='1';
+      hudTitle.textContent=label;
+      hudSub.textContent='task · '+ride.task+' · riding dep path';
+      playing=true;
+      const playBtn=document.getElementById('btn-play');
+      playBtn.textContent='Pause'; playBtn.setAttribute('aria-pressed','true');
+    }
 
     const box=new THREE.Box3().setFromObject(worldRoot);
     const center=box.getCenter(new THREE.Vector3());
@@ -326,31 +393,62 @@ export async function renderMetroHtml(opts: {
     controls.update();
     const homeCam=camera.position.clone(), homeTarget=controls.target.clone();
 
+    const raycaster=new THREE.Raycaster();
+    const pointer=new THREE.Vector2();
+    let down={x:0,y:0};
+
+    renderer.domElement.addEventListener('pointerdown', e=>{
+      down={x:e.clientX,y:e.clientY};
+    });
+    renderer.domElement.addEventListener('pointerup', e=>{
+      if(Math.hypot(e.clientX-down.x, e.clientY-down.y)>6) return;
+      const rect=renderer.domElement.getBoundingClientRect();
+      pointer.x=((e.clientX-rect.left)/rect.width)*2-1;
+      pointer.y=-((e.clientY-rect.top)/rect.height)*2+1;
+      raycaster.setFromCamera(pointer, camera);
+      const hits=raycaster.intersectObjects(stationMeshes, true);
+      if(!hits.length) return;
+      let obj=hits[0].object;
+      while(obj && !obj.userData.stationId) obj=obj.parent;
+      if(!obj) return;
+      spawnRide(obj.userData.stationId, obj.userData.label);
+    });
+    renderer.domElement.style.cursor='pointer';
+
     document.getElementById('btn-play').addEventListener('click', e=>{
       playing=!playing; e.currentTarget.textContent=playing?'Pause':'Play';
       e.currentTarget.setAttribute('aria-pressed', playing?'true':'false');
+    });
+    document.getElementById('btn-clear').addEventListener('click', ()=>{
+      clearTrain(); selectedId=null; setSelection(null);
+      hudTitle.textContent='Select a station';
+      hudSub.textContent='Click a neon stop · one train rides its dep path';
     });
     document.getElementById('btn-reset').addEventListener('click', ()=>{
       camera.position.copy(homeCam); controls.target.copy(homeTarget);
     });
 
-    const clock=new THREE.Clock();
     (function tick(){
       const t=clock.getElapsedTime();
       controls.update();
-      if(playing){
-        for(const tr of trainActors){
-          const u=(tr.phase+t*tr.speed)%1;
-          const p=tr.curve.getPointAt(u);
-          const look=tr.curve.getPointAt(Math.min(u+0.015,0.999));
-          tr.mesh.position.copy(p); tr.mesh.lookAt(look); tr.mesh.rotateY(Math.PI/2);
+      for(const s of stationMeshes){
+        const pulse=0.85+0.15*Math.sin(t*2.2 + s.position.x);
+        const sel=s.userData.stationId===selectedId;
+        if(s.userData.neonMats[1]) s.userData.neonMats[1].emissiveIntensity=(sel?3.4:2.1)*pulse;
+        if(s.userData.glow) s.userData.glow.intensity=(sel?1.35:0.55)*(0.9+0.1*Math.sin(t*3+s.position.z));
+      }
+      if(playing && activeTrain){
+        const u=Math.min(1, (t-activeTrain.t0)*activeTrain.speed);
+        const p=activeTrain.curve.getPointAt(Math.min(u,0.999));
+        const look=activeTrain.curve.getPointAt(Math.min(u+0.02,0.999));
+        activeTrain.mesh.position.copy(p); activeTrain.mesh.lookAt(look); activeTrain.mesh.rotateY(Math.PI/2);
+        if(u>=1){
+          hudSub.textContent='task · '+activeTrain.task+' · arrived';
         }
       }
-      // static maquette — no toy bob
       renderer.render(scene,camera);
       requestAnimationFrame(tick);
     })();
-
     window.addEventListener('resize', ()=>{
       const w=view.clientWidth, h=view.clientHeight;
       camera.aspect=w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h);
