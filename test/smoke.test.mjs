@@ -59,16 +59,17 @@ test('stripJsonc', () => {
   assert.ok(JSON.parse(j).tasks.build);
 });
 
-test('CLI --demo writes HTML with trains', () => {
+test('CLI --demo writes HTML with 3D scene', () => {
   const out = path.join(os.tmpdir(), `turbometro-demo-${Date.now()}.html`);
   const r = spawnSync(process.execPath, [bin, '--demo', '--out', out], {
     encoding: 'utf8',
   });
   assert.equal(r.status, 0, r.stderr);
   const html = fs.readFileSync(out, 'utf8');
-  assert.match(html, /data-turbometro="train"/);
-  assert.match(html, /data-turbometro="map"/);
-  assert.match(html, /<svg/i);
+  assert.match(html, /three@0\.170/);
+  assert.match(html, /WebGLRenderer/);
+  assert.match(html, /"trains"/);
+  assert.match(html, /data-turbometro="map"|id="view"/);
   fs.unlinkSync(out);
 });
 
@@ -82,7 +83,7 @@ test('CLI fixture mini-mono', () => {
   assert.equal(r.status, 0, r.stderr + r.stdout);
   const html = fs.readFileSync(out, 'utf8');
   assert.match(html, /@mini\/web/);
-  assert.match(html, /data-turbometro="train"/);
+  assert.match(html, /WebGLRenderer/);
   fs.unlinkSync(out);
 });
 

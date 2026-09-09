@@ -9,10 +9,14 @@
 ## Demo
 
 ```bash
-npm run build && node bin/turbometro.js --demo --out metro.html && open metro.html
+npm run build && node bin/turbometro.js --demo --out metro.html
+npx --yes serve . -p 4173
+# open http://localhost:4173/metro.html
 ```
 
-Record a GIF for the README with [`docs/gif-recipe.md`](docs/gif-recipe.md) (ship checklist).
+Outputs a **real WebGL 3D scene** (Three.js): orbit camera, lit tube rails, 3D trains on curves. Needs network once for the Three.js CDN (or use a local static server — `file://` can block ES modules).
+
+Record a GIF with [`docs/gif-recipe.md`](docs/gif-recipe.md).
 
 
 ### After npm publish
