@@ -2,12 +2,12 @@ import fs from 'node:fs';
 import type { Graph, Replay, ReplayEvent, TurboTasks } from './types.js';
 
 const TASK_COLORS = [
-  '#e63946',
-  '#457b9d',
-  '#2a9d8f',
-  '#e9c46a',
-  '#9b5de5',
-  '#f4a261',
+  '#C60C30', // red line
+  '#00A84D', // green
+  '#0039A6', // blue
+  '#F5A200', // yellow/gold
+  '#8B5A2B', // brown
+  '#0B6E4F', // deep green
 ];
 
 export function taskColor(task: string, tasks: string[]): string {
