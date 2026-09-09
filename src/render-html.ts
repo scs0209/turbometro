@@ -389,10 +389,10 @@ export async function renderMetroHtml(opts: {
       const color=new THREE.Color(colorHex); const g=new THREE.Group();
       const body=new THREE.Mesh(new RoundedBoxGeometry(0.95,0.36,0.42,2,0.07),
         new THREE.MeshStandardMaterial({color, metalness:0.25, roughness:0.3, emissive:color, emissiveIntensity:0.35}));
-      body.castShadow=true; g.add(body);
+      body.castShadow=true; body.name='body'; g.add(body);
       const car2=new THREE.Mesh(new RoundedBoxGeometry(0.55,0.34,0.4,2,0.06),
         new THREE.MeshStandardMaterial({color:color.clone().offsetHSL(0,-0.05,0.06), roughness:0.35, emissive:color, emissiveIntensity:0.15}));
-      car2.position.x=-0.78; car2.castShadow=true; g.add(car2);
+      car2.position.x=-0.78; car2.castShadow=true; car2.name='car2'; g.add(car2);
       const winMat=new THREE.MeshStandardMaterial({color:0xeaf6ff, emissive:0x7eb6ff, emissiveIntensity:0.25, roughness:0.25});
       [[0.15,0.06,0.22],[-0.2,0.06,0.22],[-0.78,0.06,0.21]].forEach(([x,y,z])=>{
         const w=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.12,0.02), winMat); w.position.set(x,y,z); g.add(w);
@@ -400,12 +400,35 @@ export async function renderMetroHtml(opts: {
       const light=new THREE.Mesh(new THREE.SphereGeometry(0.045,8,8),
         new THREE.MeshStandardMaterial({color:0xfff2c4, emissive:0xffe08a, emissiveIntensity:0.9}));
       light.position.set(0.5,0,0); g.add(light);
-      g.visible=false; // shown only when ready to depart
       return g;
+    }
+
+    function recolorTrain(mesh, colorHex){
+      const color=new THREE.Color(colorHex);
+      const body=mesh.getObjectByName('body');
+      const car2=mesh.getObjectByName('car2');
+      if(body && body.material){ body.material.color.copy(color); body.material.emissive.copy(color); }
+      if(car2 && car2.material){
+        const c2=color.clone().offsetHSL(0,-0.05,0.06);
+        car2.material.color.copy(c2); car2.material.emissive.copy(color);
+      }
     }
 
     const clock=new THREE.Clock();
     const revealedStations=new Set();
+    let sharedTrain=null;
+    let trainEverDeparted=false;
+
+    function ensureTrain(colorHex){
+      if(!sharedTrain){
+        sharedTrain=makeTrain(colorHex);
+        sharedTrain.visible=false;
+        worldRoot.add(sharedTrain);
+      } else {
+        recolorTrain(sharedTrain, colorHex);
+      }
+      return sharedTrain;
+    }
 
     function disposeObject(obj){
       worldRoot.remove(obj);
@@ -414,27 +437,34 @@ export async function renderMetroHtml(opts: {
       }});
     }
 
+    function finishPropsIfNeeded(tr){
+      if(!tr || tr.phase!=='props' || !tr.stGroup) return;
+      snapPartsIn(tr.stGroup.userData.props||[]);
+      revealedStations.add(tr.pkgId);
+      tr.stGroup.userData.revealed=true;
+    }
+
     function disposeTrainNow(){
       if(!activeTrain) return;
-      // if we interrupt mid-assemble, keep what was meant to stay
-      if(activeTrain.stGroup && activeTrain.phase==='props'){
-        snapPartsIn(activeTrain.stGroup.userData.props||[]);
-        revealedStations.add(activeTrain.pkgId);
-        activeTrain.stGroup.userData.revealed=true;
+      finishPropsIfNeeded(activeTrain);
+      // only Clear removes the mesh; station switches reuse sharedTrain
+      if(sharedTrain && activeTrain.mesh===sharedTrain){
+        sharedTrain.visible=false;
+      } else if(activeTrain.mesh && activeTrain.mesh!==sharedTrain){
+        disposeObject(activeTrain.mesh);
       }
-      disposeObject(activeTrain.mesh);
       activeTrain=null; statRide.textContent='0';
     }
 
     function clearTrain(animated){
-      if(!activeTrain) return;
-      if(!animated || activeTrain.phase==='outro' || activeTrain.phase==='arrived'){
-        disposeTrainNow();
-        return;
+      if(!activeTrain && !sharedTrain) return;
+      if(sharedTrain){
+        disposeObject(sharedTrain);
+        sharedTrain=null;
+        trainEverDeparted=false;
       }
-      activeTrain.phase='outro';
-      activeTrain.t0=clock.getElapsedTime();
-      activeTrain.outroFrom=1;
+      activeTrain=null;
+      statRide.textContent='0';
     }
 
     function setSelection(stGroup){
@@ -464,8 +494,10 @@ export async function renderMetroHtml(opts: {
     }
 
     function beginRide(tr){
+      // keep visible if already on the map; only first departure reveals
       tr.mesh.visible=true;
       tr.mesh.scale.setScalar(1);
+      trainEverDeparted=true;
       placeTrainOnCurve(tr.mesh, tr.curve, 0);
       tr.phase='ride';
       tr.t0=clock.getElapsedTime();
@@ -473,31 +505,36 @@ export async function renderMetroHtml(opts: {
       playing=true;
       const playBtn=document.getElementById('btn-play');
       playBtn.textContent='Pause'; playBtn.setAttribute('aria-pressed','true');
+      statRide.textContent='1';
     }
 
     function spawnRide(pkgId, label){
       selectedId=pkgId;
       const stGroup=stationMeshes.find(s=>s.userData.stationId===pkgId) || null;
       setSelection(stGroup);
+      hudTitle.textContent=label;
 
-      // same station already active (assembling / riding / parked) — leave train alone
-      if(activeTrain && activeTrain.pkgId===pkgId){
-        hudTitle.textContent=label;
-        return;
-      }
+      // same station — leave train exactly as-is
+      if(activeTrain && activeTrain.pkgId===pkgId) return;
 
-      disposeTrainNow();
+      // switching stations: finish previous assemble, but NEVER dispose/hide the shared train
+      if(activeTrain) finishPropsIfNeeded(activeTrain);
+
       const ride=rideByPkg.get(pkgId);
       if(!ride){
-        hudTitle.textContent=label;
         hudSub.textContent='Terminal stop · no dep ride path';
         if(stGroup && !revealedStations.has(pkgId)){
           activeTrain={
-            pkgId, mesh:new THREE.Group(), curve:null, speed:0, task:'',
+            pkgId, mesh:sharedTrain || new THREE.Group(), curve:null, speed:0, task:'',
             phase:'props', t0:clock.getElapsedTime(), stGroup,
             propDur:0.55, propStagger:0.13
           };
-          worldRoot.add(activeTrain.mesh);
+          if(activeTrain.mesh!==sharedTrain) worldRoot.add(activeTrain.mesh);
+        } else if(activeTrain){
+          activeTrain.pkgId=pkgId;
+          activeTrain.stGroup=stGroup;
+          activeTrain.curve=null;
+          activeTrain.phase='arrived';
         }
         return;
       }
@@ -505,9 +542,7 @@ export async function renderMetroHtml(opts: {
       const firstVisit=!revealedStations.has(pkgId);
       const pts=ride.points.map(p=>{ const v=world(p); v.y=railY+0.24; return v; });
       const curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',0.25);
-      const mesh=makeTrain(ride.color);
-      placeTrainOnCurve(mesh, curve, 0);
-      worldRoot.add(mesh);
+      const mesh=ensureTrain(ride.color);
 
       activeTrain={
         pkgId, curve, mesh, speed:ride.speed, task:ride.task, stGroup,
@@ -517,17 +552,17 @@ export async function renderMetroHtml(opts: {
         outroDur:0.35
       };
       hudTitle.textContent=label;
-      statRide.textContent='1';
+      statRide.textContent=trainEverDeparted || mesh.visible ? '1' : '0';
+
       if(firstVisit){
-        mesh.visible=false;
+        // hide ONLY before the very first departure in the session
+        if(!trainEverDeparted) mesh.visible=false;
         hudSub.textContent='task · '+ride.task+' · assembling stop…';
         playing=true;
       } else {
-        // stop already built — train just departs, no spawn anim
+        // other stop / revisit — retarget path, stay visible, no pop
         beginRide(activeTrain);
       }
-      const playBtn=document.getElementById('btn-play');
-      playBtn.textContent='Pause'; playBtn.setAttribute('aria-pressed','true');
     }
 
     const box=new THREE.Box3().setFromObject(worldRoot);
@@ -592,10 +627,10 @@ export async function renderMetroHtml(opts: {
             revealedStations.add(tr.pkgId);
             if(tr.stGroup) tr.stGroup.userData.revealed=true;
             if(!tr.curve){
-              disposeTrainNow();
+              tr.phase='arrived';
               hudSub.textContent='Terminal stop · assembled';
             } else {
-              // buildings done — train departs as-is (no train spawn anim)
+              // buildings done — first show only if never departed; else stay visible
               beginRide(tr);
             }
           }
