@@ -1,5 +1,5 @@
 /**
- * Showcase map SVG — layoutMetro for geometry only; we draw the transit board.
+ * Showcase map SVG — layoutMetro for geometry; SMIL trains; shallow 3D cues in glyph/shadow.
  */
 import { shortestPathEndpoints } from './graph.js';
 import { taskColor } from './replay.js';
@@ -39,10 +39,56 @@ function shortLabel(name: string): string {
   return parts[parts.length - 1] || name;
 }
 
-function offsetPath(d: string, pad: number): string {
-  return d.replace(/(-?\d+\.?\d*)\s+(-?\d+\.?\d*)/g, (_, x, y) => {
-    return `${Number(x) + pad} ${Number(y) + pad}`;
+function roundPath(d: string): string {
+  return d.replace(/-?\d+\.?\d*(?:e[+-]?\d+)?/gi, (n) => {
+    const v = Number(n);
+    return Number.isFinite(v) ? String(Math.round(v * 10) / 10) : n;
   });
+}
+
+function offsetPath(d: string, pad: number): string {
+  return roundPath(
+    d.replace(/(-?\d+\.?\d*(?:e[+-]?\d+)?)\s+(-?\d+\.?\d*(?:e[+-]?\d+)?)/gi, (_, x, y) => {
+      return `${Number(x) + pad} ${Number(y) + pad}`;
+    }),
+  );
+}
+
+/** Extract polyline points from simple M/L paths. */
+function pathPoints(d: string): Array<{ x: number; y: number }> {
+  const pts: Array<{ x: number; y: number }> = [];
+  const re = /([ML])\s*(-?\d+\.?\d*)\s+(-?\d+\.?\d*)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(d))) {
+    pts.push({ x: Number(m[2]), y: Number(m[3]) });
+  }
+  // also catch bare pairs after first M
+  if (pts.length < 2) {
+    const nums = [...d.matchAll(/(-?\d+\.?\d*)/g)].map((x) => Number(x[1]));
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      pts.push({ x: nums[i]!, y: nums[i + 1]! });
+    }
+  }
+  return pts;
+}
+
+function pointsToPath(pts: Array<{ x: number; y: number }>): string {
+  if (!pts.length) return 'M 0 0';
+  return pts
+    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${roundNum(p.x)} ${roundNum(p.y)}`)
+    .join(' ');
+}
+
+function roundNum(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+function reversePath(d: string): string {
+  return pointsToPath(pathPoints(d).reverse());
+}
+
+function dist(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 function collectSegments(layout: LayoutResult): Array<{
@@ -78,7 +124,8 @@ function collectSegments(layout: LayoutResult): Array<{
   return out;
 }
 
-function pathNear(
+/** Path from `fromId` → `toId` (direction corrected). */
+function directedPath(
   layout: LayoutResult,
   fromId: string,
   toId: string,
@@ -87,53 +134,64 @@ function pathNear(
   const b = layout.positions.get(toId);
   if (!a || !b) return 'M 0 0';
   const segs = collectSegments(layout);
-  const score = (d: string) => {
-    const nums = [...d.matchAll(/(-?\d+\.?\d*)/g)].map((m) => Number(m[1]));
-    if (nums.length < 4) return Infinity;
-    const x0 = nums[0]!,
-      y0 = nums[1]!;
-    const x1 = nums[nums.length - 2]!,
-      y1 = nums[nums.length - 1]!;
-    const dFwd =
-      Math.hypot(x0 - a.x, y0 - a.y) + Math.hypot(x1 - b.x, y1 - b.y);
-    const dRev =
-      Math.hypot(x0 - b.x, y0 - b.y) + Math.hypot(x1 - a.x, y1 - a.y);
-    return Math.min(dFwd, dRev);
-  };
   let best: string | null = null;
   let bestScore = Infinity;
+  let bestReversed = false;
+
   for (const s of segs) {
-    const sc = score(s.d);
-    if (sc < bestScore) {
-      bestScore = sc;
+    const pts = pathPoints(s.d);
+    if (pts.length < 2) continue;
+    const start = pts[0]!;
+    const end = pts[pts.length - 1]!;
+    const fwd = dist(start, a) + dist(end, b);
+    const rev = dist(start, b) + dist(end, a);
+    if (fwd < bestScore) {
+      bestScore = fwd;
       best = s.d;
+      bestReversed = false;
+    }
+    if (rev < bestScore) {
+      bestScore = rev;
+      best = s.d;
+      bestReversed = true;
     }
   }
-  if (best && bestScore < 48) return best;
-  return `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
+
+  if (best && bestScore < 55) {
+    return bestReversed ? reversePath(best) : best;
+  }
+  return `M ${roundNum(a.x)} ${roundNum(a.y)} L ${roundNum(b.x)} ${roundNum(b.y)}`;
 }
 
-function trainGlyph(color: string, id: string): string {
+/** Isometric-ish 3-face metro car. */
+function trainGlyph3d(color: string): string {
+  const side = shade(color, -0.28);
+  const top = shade(color, 0.18);
   return `
-    <g id="${id}" class="tm-car">
-      <defs>
-        <filter id="glow-${id}" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="1.6" result="b"/>
-          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
-      </defs>
-      <g transform="translate(-20,-7)" filter="url(#glow-${id})">
-        <rect x="0" y="0" width="26" height="12" rx="3" fill="${color}" stroke="var(--map-ink)" stroke-width="1.25"/>
-        <rect x="27" y="0" width="16" height="12" rx="3" fill="${color}" stroke="var(--map-ink)" stroke-width="1.25"/>
-        <rect x="3.5" y="2.8" width="6" height="4" rx="0.8" fill="#F8FBFF" opacity="0.95"/>
-        <rect x="12" y="2.8" width="6" height="4" rx="0.8" fill="#F8FBFF" opacity="0.95"/>
-        <rect x="30" y="2.8" width="6" height="4" rx="0.8" fill="#F8FBFF" opacity="0.95"/>
-        <circle cx="6" cy="13.2" r="1.7" fill="var(--map-ink)"/>
-        <circle cx="20" cy="13.2" r="1.7" fill="var(--map-ink)"/>
-        <circle cx="32" cy="13.2" r="1.7" fill="var(--map-ink)"/>
-        <circle cx="40" cy="13.2" r="1.7" fill="var(--map-ink)"/>
-      </g>
+    <g class="tm-car-3d">
+      <!-- shadow on "ground" -->
+      <ellipse cx="2" cy="9" rx="16" ry="3.2" fill="#000" opacity="0.28"/>
+      <!-- left/side face -->
+      <path d="M -14,2 L -10,-4 L 8,-4 L 4,2 Z" fill="${side}" stroke="var(--map-ink)" stroke-width="0.9"/>
+      <!-- front face -->
+      <path d="M 4,2 L 8,-4 L 20,-1 L 16,5 Z" fill="${shade(color, -0.12)}" stroke="var(--map-ink)" stroke-width="0.9"/>
+      <!-- roof / top -->
+      <path d="M -10,-4 L -4,-8 L 14,-5 L 8,-4 Z" fill="${top}" stroke="var(--map-ink)" stroke-width="0.9"/>
+      <!-- windows -->
+      <rect x="-8" y="-2.2" width="5" height="2.8" rx="0.5" fill="#E8F4FF" opacity="0.9"/>
+      <rect x="-1" y="-2.2" width="5" height="2.8" rx="0.5" fill="#E8F4FF" opacity="0.9"/>
+      <path d="M 9,-1.5 L 12,-0.2 L 12,1.6 L 9,0.4 Z" fill="#E8F4FF" opacity="0.85"/>
     </g>`;
+}
+
+function shade(hex: string, amt: number): string {
+  const h = hex.replace('#', '');
+  if (h.length !== 6) return hex;
+  const n = (i: number) => {
+    const v = Math.max(0, Math.min(255, parseInt(h.slice(i, i + 2), 16) * (1 + amt)));
+    return Math.round(v).toString(16).padStart(2, '0');
+  };
+  return `#${n(0)}${n(2)}${n(4)}`;
 }
 
 export function buildMapSvg(opts: {
@@ -184,6 +242,7 @@ export function buildMapSvg(opts: {
       const lw = Math.max(label.length * 7.1 + 12, 40);
       return `
       <g class="station" data-station="${esc(n.name)}" tabindex="0" transform="translate(${x},${y})">
+        <ellipse class="station-shadow" cx="1.5" cy="11" rx="${interchange ? 14 : 11}" ry="3.5" fill="#000" opacity="0.22"/>
         <circle class="station-hit" r="20" fill="transparent"/>
         ${
           interchange
@@ -200,57 +259,47 @@ export function buildMapSvg(opts: {
     })
     .join('\n');
 
+  // Prefer packages that have a ride path; max 4 trains to avoid chaos
   const byPkg = new Map<string, (typeof replay.events)[0]>();
   for (const ev of replay.events) {
     const prev = byPkg.get(ev.package);
     if (!prev || ev.status === 'running') byPkg.set(ev.package, ev);
   }
   const tasks = Object.keys(turbo);
-  const trainAnim: string[] = [];
-  const trains = [...byPkg.values()]
-    .map((ev, i) => {
+  const candidates = [...byPkg.values()]
+    .map((ev) => ({ ev, ends: shortestPathEndpoints(graph, ev.package) }))
+    .filter((x) => x.ends)
+    .slice(0, 4);
+
+  const guidePaths: string[] = [];
+  const trains = candidates
+    .map(({ ev, ends }, i) => {
       const color = taskColor(ev.task, tasks);
-      const id = `t${i}`;
-      const ends = shortestPathEndpoints(graph, ev.package);
-      if (!ends) {
-        const p = layout.positions.get(ev.package);
-        if (!p) return '';
-        const x = p.x + pad;
-        const y = p.y + pad;
-        const delay = 350 + i * 550;
-        trainAnim.push(`
-          @keyframes pulse-${i} {
-            0%,100% { transform: translate(${x}px,${y}px) scale(0.94); opacity: 0.65; }
-            50% { transform: translate(${x}px,${y}px) scale(1.06); opacity: 1; }
-          }
-          .tm-train-${i} { animation: pulse-${i} 2.4s ${delay}ms ease-in-out infinite; }
-        `);
-        return `<g class="tm-train tm-train-${i}" data-turbometro="train" data-package="${esc(ev.package)}">${trainGlyph(color, id)}</g>`;
-      }
-      const d = offsetPath(pathNear(layout, ends.from, ends.to), pad);
-      const delay = 280 + i * 620;
-      const dur = 2800 + (i % 3) * 450;
-      trainAnim.push(`
-        @keyframes ride-${i} {
-          0% { offset-distance: 0%; opacity: 0; }
-          7% { opacity: 1; }
-          80% { offset-distance: 100%; opacity: 1; }
-          92% { offset-distance: 100%; opacity: 0.12; }
-          100% { offset-distance: 0%; opacity: 0; }
-        }
-        .tm-train-${i} {
-          offset-path: path('${d}');
-          offset-rotate: auto;
-          offset-anchor: center;
-          animation: ride-${i} ${dur}ms ${delay}ms cubic-bezier(.42,.0,.2,1) infinite;
-        }
-      `);
-      return `<g class="tm-train tm-train-${i}" data-turbometro="train" data-package="${esc(ev.package)}" data-task="${esc(ev.task)}">${trainGlyph(color, id)}</g>`;
+      const raw = directedPath(layout, ends!.from, ends!.to);
+      const d = offsetPath(raw, pad);
+      const pathId = `ride-path-${i}`;
+      const dur = 3.2 + (i % 3) * 0.55;
+      const begin = i * 0.85;
+      guidePaths.push(
+        `<path id="${pathId}" d="${d}" fill="none" stroke="none" pointer-events="none"/>`,
+      );
+      return `
+      <g class="tm-train" data-turbometro="train" data-package="${esc(ev.package)}" data-task="${esc(ev.task)}">
+        ${trainGlyph3d(color)}
+        <animateMotion
+          dur="${dur}s"
+          begin="${begin}s"
+          repeatCount="indefinite"
+          rotate="auto"
+          calcMode="linear">
+          <mpath href="#${pathId}" xlink:href="#${pathId}"/>
+        </animateMotion>
+      </g>`;
     })
     .join('\n');
 
   return `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${vbW} ${vbH}" width="100%" height="auto" class="metro-svg" role="img" aria-label="Monorepo subway map for ${esc(title)}">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${vbW} ${vbH}" width="100%" height="auto" class="metro-svg" role="img" aria-label="Monorepo subway map for ${esc(title)}">
   <defs>
     <radialGradient id="boardGlow" cx="48%" cy="36%" r="70%">
       <stop offset="0%" stop-color="var(--glow-center)"/>
@@ -261,6 +310,9 @@ export function buildMapSvg(opts: {
     </pattern>
     <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
       <feDropShadow dx="0" dy="1.2" stdDeviation="2" flood-opacity="0.28"/>
+    </filter>
+    <filter id="boardDepth" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="16" flood-opacity="0.35"/>
     </filter>
   </defs>
   <style>
@@ -278,14 +330,13 @@ export function buildMapSvg(opts: {
     .map.is-dim .station { opacity: 0.28; }
     .map.is-dim .station.is-active,
     .map.is-dim .station.is-neighbor { opacity: 1; }
-    .map.is-dim .tm-train { opacity: 0.25; }
-    .map.is-dim .tm-train.is-focus { opacity: 1; }
+    .map.is-dim .tm-train { opacity: 0.2; }
     .tm-train { pointer-events: none; }
     .cartouche .title { fill: var(--map-ink); font-weight: 700; letter-spacing: 0.08em; }
     .cartouche .sub { fill: var(--map-muted); }
-    ${trainAnim.join('\n')}
+    .paused .tm-train animateMotion { animation-play-state: paused; }
     @media (prefers-reduced-motion: reduce) {
-      .tm-train { animation: none !important; offset-distance: 60% !important; opacity: 1 !important; }
+      .tm-train animateMotion { repeatCount: 0; }
     }
   </style>
   <rect width="100%" height="100%" fill="url(#boardGlow)"/>
@@ -299,6 +350,7 @@ export function buildMapSvg(opts: {
     ${railsCasing}
     ${railsColor}
   </g>
+  <g class="guides" aria-hidden="true">${guidePaths.join('\n')}</g>
   <g class="stations">${stations}</g>
   <g class="trains">${trains}</g>
 </svg>`;

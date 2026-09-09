@@ -249,19 +249,43 @@ export async function renderMetroHtml(opts: {
       color: var(--muted);
     }
     .stats strong { color: var(--ink); font-size: 1rem; display: block; font-family: Syne, sans-serif; }
-    .board {
+    .board-viewport {
       flex: 1;
       min-height: 0;
-      border: 1px solid var(--border);
-      background: var(--bg-elev);
-      border-radius: 2px;
-      overflow: auto;
+      perspective: 1600px;
+      perspective-origin: 50% 35%;
       display: grid;
       place-items: center;
-      padding: 0.75rem;
+      padding: 0.5rem 0.75rem 1rem;
     }
-    .board .map { width: min(100%, 1100px); }
-    .board svg { display: block; width: 100%; height: auto; max-height: calc(100vh - 220px); }
+    .board {
+      width: min(100%, 1080px);
+      transform-style: preserve-3d;
+      transform: rotateX(var(--tilt-x, 18deg)) rotateZ(var(--tilt-z, -3.5deg)) translateY(-6px);
+      transition: transform 80ms linear;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      border-radius: 4px;
+      padding: 0.85rem;
+      box-shadow:
+        0 2px 0 rgba(255,255,255,0.04) inset,
+        0 28px 50px rgba(0,0,0,0.45),
+        0 8px 16px rgba(0,0,0,0.35),
+        0 60px 40px -30px rgba(0,0,0,0.5);
+    }
+    .board::after {
+      content: "";
+      position: absolute;
+      inset: auto 8% -18px;
+      height: 28px;
+      background: radial-gradient(ellipse at center, rgba(0,0,0,0.45), transparent 70%);
+      filter: blur(6px);
+      pointer-events: none;
+      z-index: -1;
+    }
+    .board { position: relative; }
+    .board .map { width: 100%; transform: translateZ(12px); }
+    .board svg { display: block; width: 100%; height: auto; max-height: calc(100vh - 240px); }
     .bottom {
       display: flex;
       flex-wrap: wrap;
@@ -296,7 +320,9 @@ export async function renderMetroHtml(opts: {
       max-width: 28rem;
       line-height: 1.4;
     }
-    .paused .tm-train { animation-play-state: paused !important; }
+    @media (prefers-reduced-motion: reduce) {
+      .board { transform: none; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+    }
   </style>
 </head>
 <body>
@@ -323,8 +349,10 @@ export async function renderMetroHtml(opts: {
           <div><strong>${Object.keys(opts.turbo).length}</strong>task lines</div>
         </div>
       </div>
-      <div class="board">
-        <div class="map" data-turbometro="map" id="map">${svg}</div>
+      <div class="board-viewport" id="viewport">
+        <div class="board" id="board3d">
+          <div class="map" data-turbometro="map" id="map">${svg}</div>
+        </div>
       </div>
     </main>
     <footer class="bottom">
@@ -339,6 +367,10 @@ export async function renderMetroHtml(opts: {
       var root = document.documentElement;
       var play = document.getElementById('btn-play');
       var themeBtn = document.getElementById('btn-theme');
+      var viewport = document.getElementById('viewport');
+      var board = document.getElementById('board3d');
+      var svg = map.querySelector('svg');
+      var paused = false;
 
       function neighbors(id) {
         var set = {};
@@ -386,9 +418,28 @@ export async function renderMetroHtml(opts: {
       });
 
       play.addEventListener('click', function () {
-        var paused = document.body.classList.toggle('paused');
+        paused = !paused;
+        if (svg) {
+          if (paused) svg.pauseAnimations();
+          else svg.unpauseAnimations();
+        }
         play.setAttribute('aria-pressed', paused ? 'false' : 'true');
         play.textContent = paused ? 'Play' : 'Pause';
+      });
+
+      // Shallow 3D parallax on the board
+      viewport.addEventListener('pointermove', function (e) {
+        var r = viewport.getBoundingClientRect();
+        var nx = (e.clientX - r.left) / r.width - 0.5;
+        var ny = (e.clientY - r.top) / r.height - 0.5;
+        var tiltX = 18 - ny * 10;
+        var tiltZ = -3.5 + nx * 8;
+        board.style.setProperty('--tilt-x', tiltX.toFixed(2) + 'deg');
+        board.style.setProperty('--tilt-z', tiltZ.toFixed(2) + 'deg');
+      });
+      viewport.addEventListener('pointerleave', function () {
+        board.style.setProperty('--tilt-x', '18deg');
+        board.style.setProperty('--tilt-z', '-3.5deg');
       });
     })();
   </script>
