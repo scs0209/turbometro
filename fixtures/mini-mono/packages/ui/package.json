@@ -1,0 +1,11 @@
+{
+  "name": "@mini/ui",
+  "private": true,
+  "dependencies": {
+    "@mini/utils": "workspace:*"
+  },
+  "scripts": {
+    "build": "node -e \"console.log('ui build')\"",
+    "test": "node -e \"console.log('ui test')\""
+  }
+}

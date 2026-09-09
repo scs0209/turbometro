@@ -1,0 +1,6 @@
+dag-map (metro layout)
+Copyright contributors to https://github.com/23min/DAG-map
+Licensed under the Apache License, Version 2.0
+https://www.apache.org/licenses/LICENSE-2.0
+
+Vendored into turbometro for subway-style monorepo layout.

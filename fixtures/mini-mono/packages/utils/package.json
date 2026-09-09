@@ -1,0 +1,8 @@
+{
+  "name": "@mini/utils",
+  "private": true,
+  "scripts": {
+    "build": "node -e \"console.log('utils build')\"",
+    "test": "node -e \"console.log('utils test')\""
+  }
+}

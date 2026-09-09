@@ -1,0 +1,40 @@
+{
+  "name": "turbometro",
+  "version": "0.1.0",
+  "description": "Your monorepo as a subway — trains run when turbo does.",
+  "type": "module",
+  "bin": {
+    "turbometro": "./bin/turbometro.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "vendor",
+    "fixtures"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "turborepo",
+    "pnpm",
+    "monorepo",
+    "subway",
+    "metro",
+    "visualization"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scs0209/turbometro.git"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  }
+}
