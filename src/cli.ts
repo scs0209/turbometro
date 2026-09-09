@@ -41,10 +41,12 @@ function printHelp(): void {
   console.log(`turbometro — monorepo subway map
 
 Usage:
-  turbometro [--out metro.html] [--replay run.json] [--force]
+  turbometro [--out metro.html] [--replay run.json] [--force] [--cwd dir]
   turbometro --demo
 
-Requires pnpm-workspace.yaml + turbo.json(c). Default trains are synthetic replay.
+Just run inside a pnpm workspace (or pass --cwd). Auto-detects packages
+(including apps/** globs). turbo.json is optional — scripts are inferred.
+Default trains are synthetic replay.
 `);
 }
 
@@ -72,14 +74,20 @@ async function main(): Promise<void> {
     }
     try {
       graph = parseWorkspace(root);
-      turbo = parseTurbo(root);
+      const parsed = parseTurbo(root, graph);
+      turbo = parsed.tasks;
+      if (parsed.source === 'inferred') {
+        console.warn(
+          'turbometro: no turbo.json(c) — inferring task legend from package scripts.',
+        );
+      }
     } catch (e) {
       console.error(`turbometro: ${(e as Error).message}`);
       process.exit(1);
     }
     title = path.basename(root);
     disclaimer =
-      'v0.1 trains are synthetic/replay (default). Pass --replay run.json to override. Live turbo attach is roadmap.';
+      'Trains are synthetic/replay (default). Pass --replay run.json to override. Live turbo attach is roadmap.';
   }
 
   const scale = scaleGuard(graph.nodes.length, opts.force);

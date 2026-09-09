@@ -1,6 +1,6 @@
 {
   "name": "turbometro",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Your monorepo as a subway — trains run when turbo does.",
   "type": "module",
   "bin": {

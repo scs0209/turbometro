@@ -2,7 +2,7 @@
 
 **Your monorepo as a subway — trains run when turbo does.**
 
-`npx turbometro` turns a **pnpm + Turborepo** workspace into a self-contained **3D subway**: packages are stations, workspace deps are rails, and turbo tasks ride as trains.
+`npx turbometro` turns a **pnpm** monorepo into a self-contained **3D subway**: packages are stations, workspace deps are rails, and tasks ride as trains. Works with or without `turbo.json`.
 
 ![turbometro demo](docs/demo.gif)
 
@@ -11,11 +11,11 @@
 ## Quick start
 
 ```bash
-npx turbometro
-# writes ./metro.html — serve it over http (CDN Three.js)
+# inside any pnpm workspace (apps/** globs OK; turbo.json optional)
+npx turbometro@0.1.1
+# writes ./metro.html — serve over http (CDN Three.js)
 npx --yes serve . -p 4173
 # open http://localhost:4173/metro.html
-# click a neon station → buildings assemble once → train rides
 ```
 
 ## Demo (this repo)
@@ -56,7 +56,8 @@ turbometro --demo
 ## Requirements
 
 - Node ≥ 20
-- Target repo: `pnpm-workspace.yaml` + `turbo.json` or `turbo.jsonc`
+- Target repo: `pnpm-workspace.yaml` (supports `*` and `**` package globs)
+- `turbo.json` / `turbo.jsonc` optional — without it, task legend is inferred from package scripts
 - Dependency cycles: **warned** and cycle edges dropped (map still renders)
 - Open the HTML via a local static server (`file://` can block ES modules / CDN)
 

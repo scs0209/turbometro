@@ -20,6 +20,25 @@ test('parseWorkspacePackagesList', () => {
   assert.deepEqual(list, ['apps/*', 'packages/*']);
 });
 
+test('expandGlob recursive **', async () => {
+  const { expandGlob } = await import('../dist/parse-workspace.js');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-glob-'));
+  fs.mkdirSync(path.join(tmp, 'apps/web'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'apps/web/package.json'),
+    JSON.stringify({ name: '@t/web' }),
+  );
+  fs.mkdirSync(path.join(tmp, 'apps/web/.next'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'apps/web/.next/package.json'),
+    JSON.stringify({ name: 'should-skip' }),
+  );
+  const dirs = expandGlob(tmp, 'apps/**');
+  assert.equal(dirs.length, 1);
+  assert.ok(dirs[0].endsWith(path.join('apps', 'web')));
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
 test('findWorkspaceRoot from nested cwd', () => {
   const found = findWorkspaceRoot(path.join(fixture, 'apps/web'));
   assert.equal(found, fixture);
@@ -87,16 +106,29 @@ test('CLI fixture mini-mono', () => {
   fs.unlinkSync(out);
 });
 
-test('CLI missing turbo fails', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-bad-'));
-  fs.writeFileSync(path.join(tmp, 'pnpm-workspace.yaml'), 'packages:\n  - "packages/*"\n');
+test('CLI without turbo infers scripts (pnpm ** glob)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-infer-'));
+  fs.writeFileSync(
+    path.join(tmp, 'pnpm-workspace.yaml'),
+    "packages:\n  - 'packages/**'\n",
+  );
   fs.mkdirSync(path.join(tmp, 'packages/a'), { recursive: true });
   fs.writeFileSync(
     path.join(tmp, 'packages/a/package.json'),
-    JSON.stringify({ name: 'a' }),
+    JSON.stringify({
+      name: '@tmp/a',
+      scripts: { build: 'echo', lint: 'echo' },
+    }),
   );
-  const r = spawnSync(process.execPath, [bin, '--cwd', tmp, '--out', path.join(tmp, 'x.html')], {
-    encoding: 'utf8',
-  });
-  assert.notEqual(r.status, 0);
+  const out = path.join(tmp, 'x.html');
+  const r = spawnSync(
+    process.execPath,
+    [bin, '--cwd', tmp, '--out', out],
+    { encoding: 'utf8' },
+  );
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stderr + r.stdout, /inferring task legend/i);
+  const html = fs.readFileSync(out, 'utf8');
+  assert.match(html, /@tmp\/a/);
+  fs.rmSync(tmp, { recursive: true, force: true });
 });
