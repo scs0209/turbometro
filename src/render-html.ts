@@ -448,10 +448,19 @@ export async function renderMetroHtml(opts: {
       }
     }
 
+    const _fwd=new THREE.Vector3(1,0,0);
+    const _tan=new THREE.Vector3();
+    const _q=new THREE.Quaternion();
     function placeTrainOnCurve(mesh, curve, u){
-      const p=curve.getPointAt(Math.min(Math.max(u,0),0.999));
-      const look=curve.getPointAt(Math.min(u+0.02,0.999));
-      mesh.position.copy(p); mesh.lookAt(look); mesh.rotateY(Math.PI/2);
+      // stay slightly before the true end so tangent stays stable (no 90° flip)
+      const uu=Math.min(Math.max(u,0), 0.995);
+      const p=curve.getPointAt(uu);
+      curve.getTangentAt(uu, _tan);
+      if(_tan.lengthSq()<1e-10) _tan.set(1,0,0); else _tan.normalize();
+      mesh.position.copy(p);
+      // train mesh faces +X — align +X to path tangent (no lookAt+rotateY hack)
+      _q.setFromUnitVectors(_fwd, _tan);
+      mesh.quaternion.copy(_q);
     }
 
     function beginRide(tr){
@@ -471,14 +480,8 @@ export async function renderMetroHtml(opts: {
       const stGroup=stationMeshes.find(s=>s.userData.stationId===pkgId) || null;
       setSelection(stGroup);
 
-      // same train already moving / assembling — ignore
-      if(activeTrain && activeTrain.pkgId===pkgId && (activeTrain.phase==='ride' || activeTrain.phase==='props')){
-        return;
-      }
-
-      // already arrived here — depart as-is, no train animation
-      if(activeTrain && activeTrain.pkgId===pkgId && activeTrain.phase==='arrived' && activeTrain.curve){
-        beginRide(activeTrain);
+      // same station already active (assembling / riding / parked) — leave train alone
+      if(activeTrain && activeTrain.pkgId===pkgId){
         hudTitle.textContent=label;
         return;
       }
@@ -607,6 +610,7 @@ export async function renderMetroHtml(opts: {
           const u=Math.min(1, (t-tr.t0)*tr.speed);
           placeTrainOnCurve(tr.mesh, tr.curve, u);
           if(u>=1){
+            placeTrainOnCurve(tr.mesh, tr.curve, 0.995);
             tr.phase='arrived';
             hudSub.textContent='task · '+tr.task+' · arrived';
           }
