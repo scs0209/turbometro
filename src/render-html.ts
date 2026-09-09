@@ -494,18 +494,25 @@ export async function renderMetroHtml(opts: {
     }
 
     function beginRide(tr){
-      // keep visible if already on the map; only first departure reveals
-      tr.mesh.visible=true;
-      tr.mesh.scale.setScalar(1);
-      trainEverDeparted=true;
       placeTrainOnCurve(tr.mesh, tr.curve, 0);
-      tr.phase='ride';
-      tr.t0=clock.getElapsedTime();
-      hudSub.textContent='task · '+tr.task+' · riding dep path';
+      tr.mesh.visible=true;
       playing=true;
       const playBtn=document.getElementById('btn-play');
       playBtn.textContent='Pause'; playBtn.setAttribute('aria-pressed','true');
       statRide.textContent='1';
+      // first appearance only — bokoko-style pop in; later station switches skip this
+      if(!trainEverDeparted){
+        tr.mesh.scale.setScalar(0);
+        tr.phase='intro';
+        tr.t0=clock.getElapsedTime();
+        tr.introDur=0.78;
+        hudSub.textContent='task · '+tr.task+' · train arriving…';
+        return;
+      }
+      tr.mesh.scale.setScalar(1);
+      tr.phase='ride';
+      tr.t0=clock.getElapsedTime();
+      hudSub.textContent='task · '+tr.task+' · riding dep path';
     }
 
     function spawnRide(pkgId, label){
@@ -514,7 +521,7 @@ export async function renderMetroHtml(opts: {
       setSelection(stGroup);
       hudTitle.textContent=label;
 
-      // same station — leave train exactly as-is
+      // same station — leave train exactly as-is (incl. first intro)
       if(activeTrain && activeTrain.pkgId===pkgId) return;
 
       // switching stations: finish previous assemble, but NEVER dispose/hide the shared train
@@ -633,6 +640,21 @@ export async function renderMetroHtml(opts: {
               // buildings done — first show only if never departed; else stay visible
               beginRide(tr);
             }
+          }
+        } else if(tr.phase==='intro'){
+          const raw=Math.min(1, (t-tr.t0)/tr.introDur);
+          const s=Math.max(0.001, easeOutBack(raw));
+          const lift=(1-easeOutCubic(raw))*1.25;
+          placeTrainOnCurve(tr.mesh, tr.curve, 0);
+          tr.mesh.position.y += lift;
+          tr.mesh.scale.setScalar(s);
+          if(raw>=1){
+            tr.mesh.scale.setScalar(1);
+            placeTrainOnCurve(tr.mesh, tr.curve, 0);
+            trainEverDeparted=true;
+            tr.phase='ride';
+            tr.t0=t;
+            hudSub.textContent='task · '+tr.task+' · riding dep path';
           }
         } else if(tr.phase==='outro'){
           const raw=Math.min(1, (t-tr.t0)/tr.outroDur);
