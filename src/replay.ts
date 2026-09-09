@@ -2,12 +2,12 @@ import fs from 'node:fs';
 import type { Graph, Replay, ReplayEvent, TurboTasks } from './types.js';
 
 const TASK_COLORS = [
-  '#C60C30', // red line
-  '#00A84D', // green
-  '#0039A6', // blue
-  '#F5A200', // yellow/gold
-  '#8B5A2B', // brown
-  '#0B6E4F', // deep green
+  '#FF5C5C',
+  '#3DDC97',
+  '#4C8DFF',
+  '#F5A200',
+  '#FB923C',
+  '#2DD4BF',
 ];
 
 export function taskColor(task: string, tasks: string[]): string {
@@ -58,17 +58,26 @@ export function demoGraphAndTurbo(): { graph: Graph; turbo: TurboTasks } {
     graph: {
       nodes: [
         { name: '@demo/web', dir: 'apps/web', kind: 'apps' },
+        { name: '@demo/admin', dir: 'apps/admin', kind: 'apps' },
         { name: '@demo/ui', dir: 'packages/ui', kind: 'packages' },
+        { name: '@demo/api-client', dir: 'packages/api-client', kind: 'packages' },
         { name: '@demo/utils', dir: 'packages/utils', kind: 'packages' },
+        { name: '@demo/config', dir: 'packages/config', kind: 'packages' },
       ],
       edges: [
         ['@demo/web', '@demo/ui'],
+        ['@demo/web', '@demo/api-client'],
+        ['@demo/admin', '@demo/ui'],
+        ['@demo/admin', '@demo/api-client'],
         ['@demo/ui', '@demo/utils'],
+        ['@demo/api-client', '@demo/utils'],
+        ['@demo/utils', '@demo/config'],
       ],
     },
     turbo: {
       build: { dependsOn: ['^build'] },
       test: { dependsOn: ['build'] },
+      lint: {},
     },
   };
 }

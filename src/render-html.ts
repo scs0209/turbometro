@@ -1,25 +1,10 @@
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { shortestPathEndpoints } from './graph.js';
-import { taskColor } from './replay.js';
 import { toDagMapInput } from './layout.js';
+import { buildMapSvg, type LayoutResult } from './render-map.js';
+import { TRANSIT_LAYOUT_THEME } from './theme.js';
 import type { Graph, Replay, TurboTasks } from './types.js';
-
-/** Seoul-ish transit board — not cream, not purple SaaS. */
-export const TRANSIT_THEME = {
-  paper: '#EEF2F6',
-  ink: '#0E1116',
-  muted: '#5A6578',
-  border: '#C5CEDA',
-  classes: {
-    pure: '#00A84D',
-    recordable: '#0039A6',
-    side_effecting: '#F5A200',
-    gate: '#C60C30',
-    pending: '#9AA3B2',
-  },
-  lineOpacity: 1.55,
-};
+import { taskColor } from './replay.js';
 
 type LayoutMetro = (
   dag: {
@@ -27,25 +12,9 @@ type LayoutMetro = (
     edges: Array<[string, string]>;
   },
   options?: Record<string, unknown>,
-) => {
-  positions: Map<string, { x: number; y: number }>;
-  width: number;
-  height: number;
-};
+) => LayoutResult & { theme?: unknown };
 
-type RenderSVG = (
-  dag: {
-    nodes: Array<{ id: string; label: string; cls: string }>;
-    edges: Array<[string, string]>;
-  },
-  layout: ReturnType<LayoutMetro>,
-  options?: Record<string, unknown>,
-) => string;
-
-async function loadVendor(): Promise<{
-  layoutMetro: LayoutMetro;
-  renderSVG: RenderSVG;
-}> {
+async function loadVendor(): Promise<{ layoutMetro: LayoutMetro }> {
   const pkgRoot = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     '..',
@@ -53,14 +22,10 @@ async function loadVendor(): Promise<{
   const metroUrl = pathToFileURL(
     path.join(pkgRoot, 'vendor/dag-map/src/layout-metro.js'),
   ).href;
-  const renderUrl = pathToFileURL(
-    path.join(pkgRoot, 'vendor/dag-map/src/render.js'),
-  ).href;
   const { layoutMetro } = (await import(metroUrl)) as {
     layoutMetro: LayoutMetro;
   };
-  const { renderSVG } = (await import(renderUrl)) as { renderSVG: RenderSVG };
-  return { layoutMetro, renderSVG };
+  return { layoutMetro };
 }
 
 function esc(s: string): string {
@@ -71,98 +36,12 @@ function esc(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Compact 2-car metro glyph (viewBox-ish local coords). */
-function trainGlyph(color: string): string {
-  return `
-    <g class="tm-car" transform="translate(-18,-6)">
-      <rect x="0" y="1" width="22" height="10" rx="2.2" fill="${color}" stroke="#0E1116" stroke-width="1.1"/>
-      <rect x="23" y="1" width="14" height="10" rx="2.2" fill="${color}" stroke="#0E1116" stroke-width="1.1"/>
-      <rect x="3" y="3.2" width="5" height="3.2" rx="0.6" fill="#F4F8FC" opacity="0.92"/>
-      <rect x="10" y="3.2" width="5" height="3.2" rx="0.6" fill="#F4F8FC" opacity="0.92"/>
-      <rect x="26" y="3.2" width="5" height="3.2" rx="0.6" fill="#F4F8FC" opacity="0.92"/>
-      <circle cx="5" cy="12" r="1.5" fill="#0E1116"/>
-      <circle cx="17" cy="12" r="1.5" fill="#0E1116"/>
-      <circle cx="28" cy="12" r="1.5" fill="#0E1116"/>
-      <circle cx="34" cy="12" r="1.5" fill="#0E1116"/>
-    </g>`;
-}
-
-function buildTrainLayer(
-  graph: Graph,
-  layout: ReturnType<LayoutMetro>,
-  replay: Replay,
-  turbo: TurboTasks,
-): string {
-  const tasks = Object.keys(turbo);
-  // One train per package: prefer running, else first event
-  const byPkg = new Map<string, (typeof replay.events)[0]>();
-  for (const ev of replay.events) {
-    const prev = byPkg.get(ev.package);
-    if (!prev || ev.status === 'running') byPkg.set(ev.package, ev);
-  }
-  const events = [...byPkg.values()];
-
-  const parts: string[] = [
-    `<g class="turbometro-trains" data-turbometro="trains">`,
-  ];
-
-  events.forEach((ev, i) => {
-    const pos = layout.positions.get(ev.package);
-    if (!pos) return;
-    const color = taskColor(ev.task, tasks);
-    const pathEnds = shortestPathEndpoints(graph, ev.package);
-    const delay = 400 + i * 700;
-    const dur = 2200 + (i % 3) * 400;
-
-    if (pathEnds) {
-      const from = layout.positions.get(pathEnds.from);
-      const to = layout.positions.get(pathEnds.to);
-      if (from && to) {
-        const d = `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
-        parts.push(`
-          <g class="tm-train" data-turbometro="train" data-package="${esc(ev.package)}" data-task="${esc(ev.task)}" data-status="${esc(ev.status)}"
-             style="offset-path: path('${d}'); offset-rotate: auto; offset-anchor: center; animation: tm-ride-${i} ${dur}ms ${delay}ms cubic-bezier(.4,.0,.2,1) infinite;">
-            ${trainGlyph(color)}
-          </g>
-          <style>
-            @keyframes tm-ride-${i} {
-              0% { offset-distance: 0%; opacity: 0; }
-              8% { opacity: 1; }
-              78% { offset-distance: 100%; opacity: 1; }
-              92% { offset-distance: 100%; opacity: 1; }
-              100% { offset-distance: 100%; opacity: 0; }
-            }
-          </style>
-        `);
-        return;
-      }
-    }
-
-    parts.push(`
-      <g class="tm-pulse" data-turbometro="train" data-package="${esc(ev.package)}" data-task="${esc(ev.task)}" transform="translate(${pos.x},${pos.y})">
-        <circle class="tm-ring" r="16" fill="none" stroke="${color}" stroke-width="2"
-          style="animation: tm-ring-${i} 1.8s ${delay}ms ease-out infinite;" />
-        ${trainGlyph(color)}
-      </g>
-      <style>
-        @keyframes tm-ring-${i} {
-          0% { transform: scale(0.55); opacity: 0.85; }
-          100% { transform: scale(1.55); opacity: 0; }
-        }
-      </style>
-    `);
-  });
-
-  parts.push('</g>');
-  return parts.join('\n');
-}
-
-function taskLegend(turbo: TurboTasks): string {
+function taskChips(turbo: TurboTasks): string {
   const tasks = Object.keys(turbo);
   return tasks
     .map((t) => {
       const c = taskColor(t, tasks);
-      return `<li><span class="swatch" style="background:${c}"></span><code>${esc(t)}</code> line</li>`;
+      return `<span class="chip"><i style="background:${c}"></i>${esc(t)}</span>`;
     })
     .join('');
 }
@@ -174,218 +53,345 @@ export async function renderMetroHtml(opts: {
   replay: Replay;
   disclaimer: string;
 }): Promise<string> {
-  const { layoutMetro, renderSVG } = await loadVendor();
+  const { layoutMetro } = await loadVendor();
   const dag = toDagMapInput(opts.graph);
   const layout = layoutMetro(dag, {
     routing: 'angular',
-    theme: TRANSIT_THEME,
-    scale: 1.85,
-    layerSpacing: 42,
-    mainSpacing: 40,
-  });
-  let svg = renderSVG(dag, layout, {
-    title: '',
-    subtitle: null,
-    showLegend: true,
-    diagonalLabels: true,
-    labelAngle: 38,
-    legendLabels: {
-      pure: 'apps',
-      recordable: 'packages',
-      side_effecting: 'other',
-      gate: 'gate',
-    },
-    font: "'IBM Plex Mono', ui-monospace, monospace",
+    theme: TRANSIT_LAYOUT_THEME,
+    scale: 2.15,
+    layerSpacing: 48,
+    mainSpacing: 46,
+    subSpacing: 22,
   });
 
-  const trains = buildTrainLayer(opts.graph, layout, opts.replay, opts.turbo);
-  svg = svg.replace('</svg>', `${trains}\n</svg>`);
+  const svg = buildMapSvg({
+    title: opts.title,
+    graph: opts.graph,
+    layout,
+    turbo: opts.turbo,
+    replay: opts.replay,
+  });
 
+  const edgeJson = JSON.stringify(opts.graph.edges);
   const stationCount = opts.graph.nodes.length;
   const railCount = opts.graph.edges.length;
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="generator" content="turbometro 0.1" />
   <title>turbometro — ${esc(opts.title)}</title>
+  <script>
+    (function () {
+      try {
+        var t = new URLSearchParams(location.search).get('theme');
+        if (t !== 'light' && t !== 'dark') {
+          try { t = localStorage.getItem('turbometro-theme'); } catch (e) {}
+        }
+        if (t !== 'light' && t !== 'dark') {
+          t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
   <style>
-    :root {
+    :root, [data-theme="dark"] {
+      --bg: #0B0F14;
+      --bg-elev: #121821;
+      --ink: #E8EEF7;
+      --muted: #8B97AB;
+      --border: #2A3545;
+      --accent: #3DDC97;
+      --accent-2: #4C8DFF;
+      --map-ink: #E8EEF7;
+      --map-muted: #8B97AB;
+      --map-border: #2A3545;
+      --rail-case: #06080C;
+      --station-fill: #151C27;
+      --label-bg: rgba(18,24,33,0.92);
+      --label-bg-active: rgba(61,220,151,0.18);
+      --cartouche-bg: rgba(18,24,33,0.92);
+      --glow-center: #151C28;
+      --glow-edge: #0B0F14;
+      --grid-line: rgba(232,238,247,0.045);
+      --toolbar: rgba(18,24,33,0.88);
+    }
+    [data-theme="light"] {
+      --bg: #E8EDF4;
+      --bg-elev: #F7F9FC;
       --ink: #0E1116;
       --muted: #5A6578;
-      --paper: #EEF2F6;
-      --line-green: #00A84D;
-      --line-blue: #0039A6;
-      --sheet: #F7F9FC;
+      --border: #C5CEDA;
+      --accent: #00A84D;
+      --accent-2: #0039A6;
+      --map-ink: #0E1116;
+      --map-muted: #5A6578;
+      --map-border: #C5CEDA;
+      --rail-case: #FFFFFF;
+      --station-fill: #FFFFFF;
+      --label-bg: rgba(247,249,252,0.95);
+      --label-bg-active: rgba(0,168,77,0.14);
+      --cartouche-bg: rgba(247,249,252,0.96);
+      --glow-center: #F4F7FB;
+      --glow-edge: #E8EDF4;
+      --grid-line: rgba(14,17,22,0.05);
+      --toolbar: rgba(247,249,252,0.92);
     }
     * { box-sizing: border-box; }
+    html, body { height: 100%; }
     body {
       margin: 0;
       color: var(--ink);
-      font-family: "Syne", "Pretendard", sans-serif;
-      background-color: var(--paper);
-      background-image:
-        linear-gradient(90deg, rgba(14,17,22,0.035) 1px, transparent 1px),
-        linear-gradient(rgba(14,17,22,0.035) 1px, transparent 1px),
-        radial-gradient(ellipse 80% 50% at 100% -10%, rgba(0,168,77,0.12), transparent 55%),
-        radial-gradient(ellipse 60% 40% at -10% 100%, rgba(0,57,166,0.10), transparent 50%);
-      background-size: 28px 28px, 28px 28px, auto, auto;
-      min-height: 100vh;
+      background: var(--bg);
+      font-family: "Syne", system-ui, sans-serif;
+      overflow: hidden;
     }
-    .frame {
-      max-width: 1120px;
-      margin: 0 auto;
-      padding: clamp(1.25rem, 3vw, 2.5rem);
+    .app {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.85rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--toolbar);
+      backdrop-filter: blur(12px);
     }
     .brand {
       display: flex;
-      flex-wrap: wrap;
       align-items: baseline;
-      gap: 0.65rem 1.1rem;
-      margin-bottom: 0.35rem;
+      gap: 0.75rem;
+      min-width: 0;
     }
-    .brand-mark {
+    .logo {
       font-weight: 800;
-      font-size: clamp(2.4rem, 6vw, 3.6rem);
-      letter-spacing: -0.045em;
-      line-height: 0.95;
-      background: linear-gradient(105deg, var(--line-green) 0 42%, var(--line-blue) 42% 100%);
+      font-size: 1.35rem;
+      letter-spacing: -0.04em;
+      background: linear-gradient(110deg, var(--accent), var(--accent-2));
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
-      animation: brand-shift 8s ease-in-out infinite alternate;
+      white-space: nowrap;
     }
-    @keyframes brand-shift {
-      from { filter: hue-rotate(0deg); }
-      to { filter: hue-rotate(-8deg); }
-    }
-    .brand-sub {
+    .repo {
       font-family: "IBM Plex Mono", monospace;
       font-size: 0.78rem;
       color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
-    h1.repo {
-      margin: 0.4rem 0 0;
-      font-size: clamp(1.05rem, 2.4vw, 1.35rem);
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-    .tagline {
-      margin: 0.45rem 0 0;
-      max-width: 36rem;
-      font-size: 1.02rem;
-      font-weight: 600;
-      color: #243044;
-    }
-    .meta {
+    .toolbar {
       display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem 1.25rem;
-      margin: 1rem 0 1.25rem;
-      padding: 0;
-      list-style: none;
-      font-family: "IBM Plex Mono", monospace;
-      font-size: 0.75rem;
-      color: var(--muted);
+      gap: 0.4rem;
+      flex-shrink: 0;
     }
-    .meta strong { color: var(--ink); font-weight: 600; }
-    .sheet {
-      background: var(--sheet);
-      border: 2px solid var(--ink);
-      padding: 0.75rem 0.5rem 0.25rem;
+    .toolbar button {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--ink);
+      background: transparent;
+      border: 1px solid var(--border);
+      padding: 0.45rem 0.7rem;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    .toolbar button:hover, .toolbar button[aria-pressed="true"] {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .stage {
       position: relative;
+      min-height: 0;
+      padding: 1rem 1.25rem 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
     }
-    .sheet::before {
-      content: "NETWORK MAP";
-      position: absolute;
-      top: -0.7rem;
-      left: 0.85rem;
-      padding: 0 0.4rem;
-      background: var(--sheet);
-      font-family: "IBM Plex Mono", monospace;
-      font-size: 0.65rem;
-      letter-spacing: 0.16em;
-      font-weight: 600;
-    }
-    .sheet svg { display: block; width: 100%; height: auto; }
-    .legend-row {
+    .hero {
       display: flex;
       flex-wrap: wrap;
-      gap: 1.5rem;
-      margin-top: 1.1rem;
-      align-items: flex-start;
+      align-items: end;
+      justify-content: space-between;
+      gap: 0.75rem 1.5rem;
     }
-    .legend-row h2 {
-      margin: 0 0 0.4rem;
-      font-size: 0.7rem;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      font-family: "IBM Plex Mono", monospace;
-      color: var(--muted);
-      font-weight: 600;
-    }
-    .legend-row ul {
+    .hero h1 {
       margin: 0;
-      padding: 0;
-      list-style: none;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.45rem 1rem;
+      font-size: clamp(1.4rem, 2.6vw, 2rem);
+      letter-spacing: -0.03em;
+      font-weight: 700;
+    }
+    .hero p {
+      margin: 0.35rem 0 0;
+      color: var(--muted);
       font-family: "IBM Plex Mono", monospace;
       font-size: 0.78rem;
+      max-width: 36rem;
+      line-height: 1.45;
     }
-    .legend-row li { display: flex; align-items: center; gap: 0.4rem; }
-    .swatch {
-      width: 1.35rem;
-      height: 0.35rem;
-      border-radius: 1px;
-      display: inline-block;
-    }
-    .note {
-      margin-top: 1.25rem;
+    .stats {
+      display: flex;
+      gap: 1rem;
       font-family: "IBM Plex Mono", monospace;
       font-size: 0.72rem;
       color: var(--muted);
-      line-height: 1.45;
-      max-width: 42rem;
     }
-    @media (prefers-reduced-motion: reduce) {
-      .tm-train, .tm-ring, .brand-mark { animation: none !important; }
+    .stats strong { color: var(--ink); font-size: 1rem; display: block; font-family: Syne, sans-serif; }
+    .board {
+      flex: 1;
+      min-height: 0;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      border-radius: 2px;
+      overflow: auto;
+      display: grid;
+      place-items: center;
+      padding: 0.75rem;
     }
+    .board .map { width: min(100%, 1100px); }
+    .board svg { display: block; width: 100%; height: auto; max-height: calc(100vh - 220px); }
+    .bottom {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1.25rem;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.7rem 1.25rem 0.9rem;
+      border-top: 1px solid var(--border);
+      background: var(--toolbar);
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.72rem;
+      padding: 0.25rem 0.55rem;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .chip i {
+      width: 1.1rem;
+      height: 0.28rem;
+      display: inline-block;
+      border-radius: 1px;
+    }
+    .note {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.68rem;
+      color: var(--muted);
+      max-width: 28rem;
+      line-height: 1.4;
+    }
+    .paused .tm-train { animation-play-state: paused !important; }
   </style>
 </head>
 <body>
-  <div class="frame">
-    <header>
+  <div class="app">
+    <header class="top">
       <div class="brand">
-        <div class="brand-mark">turbometro</div>
-        <div class="brand-sub">line diagram</div>
+        <div class="logo">turbometro</div>
+        <div class="repo">${esc(opts.title)}</div>
       </div>
-      <h1 class="repo">${esc(opts.title)}</h1>
-      <p class="tagline">Your monorepo as a subway — trains run when turbo does.</p>
-      <ul class="meta">
-        <li><strong>${stationCount}</strong> stations</li>
-        <li><strong>${railCount}</strong> rails</li>
-        <li><strong>${Object.keys(opts.turbo).length}</strong> task lines</li>
-      </ul>
+      <div class="toolbar">
+        <button type="button" id="btn-theme" title="Toggle theme">Theme</button>
+        <button type="button" id="btn-play" aria-pressed="true" title="Pause trains">Pause</button>
+      </div>
     </header>
-    <div class="sheet" data-turbometro="map">
-      ${svg}
-    </div>
-    <div class="legend-row">
-      <div>
-        <h2>Task trains</h2>
-        <ul>${taskLegend(opts.turbo)}</ul>
+    <main class="stage">
+      <div class="hero">
+        <div>
+          <h1>Monorepo line map</h1>
+          <p>Packages are stations. Workspace deps are rails. Turbo tasks ride as trains.</p>
+        </div>
+        <div class="stats">
+          <div><strong>${stationCount}</strong>stations</div>
+          <div><strong>${railCount}</strong>rails</div>
+          <div><strong>${Object.keys(opts.turbo).length}</strong>task lines</div>
+        </div>
       </div>
-    </div>
-    <p class="note">${esc(opts.disclaimer)}</p>
+      <div class="board">
+        <div class="map" data-turbometro="map" id="map">${svg}</div>
+      </div>
+    </main>
+    <footer class="bottom">
+      <div class="chips">${taskChips(opts.turbo)}</div>
+      <p class="note">${esc(opts.disclaimer)}</p>
+    </footer>
   </div>
+  <script>
+    (function () {
+      var edges = ${edgeJson};
+      var map = document.getElementById('map');
+      var root = document.documentElement;
+      var play = document.getElementById('btn-play');
+      var themeBtn = document.getElementById('btn-theme');
+
+      function neighbors(id) {
+        var set = {};
+        edges.forEach(function (e) {
+          if (e[0] === id) set[e[1]] = 1;
+          if (e[1] === id) set[e[0]] = 1;
+        });
+        return set;
+      }
+
+      function clearActive() {
+        map.classList.remove('is-dim');
+        map.querySelectorAll('.is-active,.is-neighbor').forEach(function (el) {
+          el.classList.remove('is-active');
+          el.classList.remove('is-neighbor');
+        });
+      }
+
+      map.querySelectorAll('.station').forEach(function (st) {
+        st.addEventListener('click', function () {
+          var id = st.getAttribute('data-station');
+          if (st.classList.contains('is-active') && map.classList.contains('is-dim')) {
+            clearActive();
+            return;
+          }
+          clearActive();
+          map.classList.add('is-dim');
+          st.classList.add('is-active');
+          var n = neighbors(id);
+          map.querySelectorAll('.station').forEach(function (other) {
+            var oid = other.getAttribute('data-station');
+            if (n[oid]) other.classList.add('is-neighbor');
+          });
+        });
+      });
+
+      map.addEventListener('click', function (e) {
+        if (!e.target.closest('.station')) clearActive();
+      });
+
+      themeBtn.addEventListener('click', function () {
+        var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        root.setAttribute('data-theme', next);
+        try { localStorage.setItem('turbometro-theme', next); } catch (e) {}
+      });
+
+      play.addEventListener('click', function () {
+        var paused = document.body.classList.toggle('paused');
+        play.setAttribute('aria-pressed', paused ? 'false' : 'true');
+        play.textContent = paused ? 'Play' : 'Pause';
+      });
+    })();
+  </script>
 </body>
 </html>
 `;
