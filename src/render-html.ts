@@ -323,32 +323,77 @@ export async function renderMetroHtml(opts: {
       road.position.set(mid.x,0.205,mid.z); road.lookAt(b.x,0.205,b.z); road.receiveShadow=true; worldRoot.add(road);
     }
 
+    function easeOutCubic(x){ return 1-Math.pow(1-x,3); }
+    function easeOutBack(x){
+      const c1=1.70158, c3=c1+1;
+      return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2);
+    }
+    function easeInBack(x){
+      const c1=1.70158, c3=c1+1;
+      return c3*x*x*x-c1*x*x;
+    }
+
     function makeTrain(colorHex){
       const color=new THREE.Color(colorHex); const g=new THREE.Group();
+      const mats=[];
+      function addMat(m){ mats.push(m); return m; }
       const body=new THREE.Mesh(new RoundedBoxGeometry(0.95,0.36,0.42,2,0.07),
-        new THREE.MeshStandardMaterial({color, metalness:0.25, roughness:0.3, emissive:color, emissiveIntensity:0.35}));
+        addMat(new THREE.MeshStandardMaterial({color, metalness:0.25, roughness:0.3, emissive:color, emissiveIntensity:0.35, transparent:true, opacity:0})));
       body.castShadow=true; g.add(body);
       const car2=new THREE.Mesh(new RoundedBoxGeometry(0.55,0.34,0.4,2,0.06),
-        new THREE.MeshStandardMaterial({color:color.clone().offsetHSL(0,-0.05,0.06), roughness:0.35, emissive:color, emissiveIntensity:0.15}));
+        addMat(new THREE.MeshStandardMaterial({color:color.clone().offsetHSL(0,-0.05,0.06), roughness:0.35, emissive:color, emissiveIntensity:0.15, transparent:true, opacity:0})));
       car2.position.x=-0.78; car2.castShadow=true; g.add(car2);
-      const winMat=new THREE.MeshStandardMaterial({color:0xeaf6ff, emissive:0x7eb6ff, emissiveIntensity:0.25, roughness:0.25});
+      const winMat=addMat(new THREE.MeshStandardMaterial({color:0xeaf6ff, emissive:0x7eb6ff, emissiveIntensity:0.25, roughness:0.25, transparent:true, opacity:0}));
       [[0.15,0.06,0.22],[-0.2,0.06,0.22],[-0.78,0.06,0.21]].forEach(([x,y,z])=>{
         const w=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.12,0.02), winMat); w.position.set(x,y,z); g.add(w);
       });
       const light=new THREE.Mesh(new THREE.SphereGeometry(0.045,8,8),
-        new THREE.MeshStandardMaterial({color:0xfff2c4, emissive:0xffe08a, emissiveIntensity:0.9}));
-      light.position.set(0.5,0,0); g.add(light); return g;
+        addMat(new THREE.MeshStandardMaterial({color:0xfff2c4, emissive:0xffe08a, emissiveIntensity:0.9, transparent:true, opacity:0})));
+      light.position.set(0.5,0,0); g.add(light);
+      g.scale.setScalar(0);
+      g.userData.fadeMats=mats;
+      return g;
+    }
+
+    // spawn burst ring (bokoko-like materialize cue)
+    function makeSpawnBurst(colorHex){
+      const neon=new THREE.Color(colorHex);
+      const g=new THREE.Group();
+      const ring=new THREE.Mesh(new THREE.TorusGeometry(0.35,0.03,8,48),
+        new THREE.MeshStandardMaterial({color:neon, emissive:neon, emissiveIntensity:2.5, transparent:true, opacity:0.95, roughness:0.2}));
+      ring.rotation.x=Math.PI/2; g.add(ring);
+      const disk=new THREE.Mesh(new THREE.CircleGeometry(0.28,32),
+        new THREE.MeshBasicMaterial({color:neon, transparent:true, opacity:0.35, side:THREE.DoubleSide}));
+      disk.rotation.x=-Math.PI/2; disk.position.y=0.01; g.add(disk);
+      g.userData.ring=ring; g.userData.disk=disk; g.scale.setScalar(0.2);
+      return g;
     }
 
     const clock=new THREE.Clock();
 
-    function clearTrain(){
-      if(!activeTrain) return;
-      worldRoot.remove(activeTrain.mesh);
-      activeTrain.mesh.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material){
+    function disposeObject(obj){
+      worldRoot.remove(obj);
+      obj.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material){
         if(Array.isArray(o.material)) o.material.forEach(m=>m.dispose()); else o.material.dispose();
       }});
+    }
+
+    function disposeTrainNow(){
+      if(!activeTrain) return;
+      if(activeTrain.burst) disposeObject(activeTrain.burst);
+      disposeObject(activeTrain.mesh);
       activeTrain=null; statRide.textContent='0';
+    }
+
+    function clearTrain(animated){
+      if(!activeTrain) return;
+      if(!animated || activeTrain.phase==='outro'){
+        disposeTrainNow();
+        return;
+      }
+      activeTrain.phase='outro';
+      activeTrain.t0=clock.getElapsedTime();
+      activeTrain.outroFrom=activeTrain.mesh.scale.x || 1;
     }
 
     function setSelection(stGroup){
@@ -363,7 +408,7 @@ export async function renderMetroHtml(opts: {
     }
 
     function spawnRide(pkgId, label){
-      clearTrain();
+      disposeTrainNow();
       const ride=rideByPkg.get(pkgId);
       selectedId=pkgId;
       setSelection(stationMeshes.find(s=>s.userData.stationId===pkgId) || null);
@@ -374,11 +419,22 @@ export async function renderMetroHtml(opts: {
       }
       const pts=ride.points.map(p=>{ const v=world(p); v.y=railY+0.24; return v; });
       const curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',0.25);
-      const mesh=makeTrain(ride.color); worldRoot.add(mesh);
-      activeTrain={ curve, mesh, speed:ride.speed, t0:clock.getElapsedTime(), task:ride.task };
+      const mesh=makeTrain(ride.color);
+      const start=curve.getPointAt(0);
+      const look=curve.getPointAt(0.02);
+      mesh.position.copy(start); mesh.lookAt(look); mesh.rotateY(Math.PI/2);
+      worldRoot.add(mesh);
+      const burst=makeSpawnBurst(ride.color);
+      burst.position.copy(start); burst.position.y-=0.12;
+      worldRoot.add(burst);
+      activeTrain={
+        curve, mesh, burst, speed:ride.speed, task:ride.task,
+        phase:'intro', t0:clock.getElapsedTime(),
+        introDur:0.78, outroDur:0.42
+      };
       statRide.textContent='1';
       hudTitle.textContent=label;
-      hudSub.textContent='task · '+ride.task+' · riding dep path';
+      hudSub.textContent='task · '+ride.task+' · materializing…';
       playing=true;
       const playBtn=document.getElementById('btn-play');
       playBtn.textContent='Pause'; playBtn.setAttribute('aria-pressed','true');
@@ -420,7 +476,7 @@ export async function renderMetroHtml(opts: {
       e.currentTarget.setAttribute('aria-pressed', playing?'true':'false');
     });
     document.getElementById('btn-clear').addEventListener('click', ()=>{
-      clearTrain(); selectedId=null; setSelection(null);
+      clearTrain(true); selectedId=null; setSelection(null);
       hudTitle.textContent='Select a station';
       hudSub.textContent='Click a neon stop · one train rides its dep path';
     });
@@ -437,13 +493,62 @@ export async function renderMetroHtml(opts: {
         if(s.userData.neonMats[1]) s.userData.neonMats[1].emissiveIntensity=(sel?3.4:2.1)*pulse;
         if(s.userData.glow) s.userData.glow.intensity=(sel?1.35:0.55)*(0.9+0.1*Math.sin(t*3+s.position.z));
       }
-      if(playing && activeTrain){
-        const u=Math.min(1, (t-activeTrain.t0)*activeTrain.speed);
-        const p=activeTrain.curve.getPointAt(Math.min(u,0.999));
-        const look=activeTrain.curve.getPointAt(Math.min(u+0.02,0.999));
-        activeTrain.mesh.position.copy(p); activeTrain.mesh.lookAt(look); activeTrain.mesh.rotateY(Math.PI/2);
-        if(u>=1){
-          hudSub.textContent='task · '+activeTrain.task+' · arrived';
+      if(activeTrain){
+        const tr=activeTrain;
+        if(tr.phase==='intro'){
+          const raw=Math.min(1, (t-tr.t0)/tr.introDur);
+          const s=Math.max(0, easeOutBack(raw));
+          const fade=easeOutCubic(Math.min(1, raw*1.15));
+          const lift=(1-easeOutCubic(raw))*1.35;
+          tr.mesh.scale.setScalar(s);
+          for(const m of tr.mesh.userData.fadeMats){
+            m.opacity=fade;
+            if(m.emissiveIntensity!=null) m.userData.baseEmissive=m.userData.baseEmissive??m.emissiveIntensity;
+          }
+          // bloom flash then settle
+          const bloom=1+1.6*(1-raw);
+          for(const m of tr.mesh.userData.fadeMats){
+            if(m.userData.baseEmissive!=null) m.emissiveIntensity=m.userData.baseEmissive*bloom;
+          }
+          const p0=tr.curve.getPointAt(0);
+          const look=tr.curve.getPointAt(0.02);
+          tr.mesh.position.set(p0.x, p0.y+lift, p0.z);
+          tr.mesh.lookAt(look); tr.mesh.rotateY(Math.PI/2);
+          if(tr.burst){
+            const bs=0.2+easeOutCubic(raw)*1.6;
+            tr.burst.scale.setScalar(bs);
+            tr.burst.userData.ring.material.opacity=0.95*(1-raw);
+            tr.burst.userData.disk.material.opacity=0.35*(1-raw);
+            tr.burst.rotation.y=raw*Math.PI;
+          }
+          if(raw>=1){
+            tr.mesh.scale.setScalar(1);
+            for(const m of tr.mesh.userData.fadeMats){
+              m.opacity=1;
+              if(m.userData.baseEmissive!=null) m.emissiveIntensity=m.userData.baseEmissive;
+            }
+            if(tr.burst){ disposeObject(tr.burst); tr.burst=null; }
+            tr.phase='ride';
+            tr.t0=t;
+            hudSub.textContent='task · '+tr.task+' · riding dep path';
+          }
+        } else if(tr.phase==='outro'){
+          const raw=Math.min(1, (t-tr.t0)/tr.outroDur);
+          const s=Math.max(0.001, tr.outroFrom*(1-easeInBack(raw)));
+          tr.mesh.scale.setScalar(s);
+          for(const m of tr.mesh.userData.fadeMats) m.opacity=1-easeOutCubic(raw);
+          if(raw>=1) disposeTrainNow();
+        } else if(playing && tr.phase==='ride'){
+          const u=Math.min(1, (t-tr.t0)*tr.speed);
+          const p=tr.curve.getPointAt(Math.min(u,0.999));
+          const look=tr.curve.getPointAt(Math.min(u+0.02,0.999));
+          tr.mesh.position.copy(p); tr.mesh.lookAt(look); tr.mesh.rotateY(Math.PI/2);
+          // subtle settle bob at start of ride
+          const settle=Math.min(1,(t-tr.t0)*3);
+          tr.mesh.scale.setScalar(1+0.04*(1-settle)*Math.sin(settle*Math.PI));
+          if(u>=1){
+            hudSub.textContent='task · '+tr.task+' · arrived';
+          }
         }
       }
       renderer.render(scene,camera);
