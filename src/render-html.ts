@@ -130,7 +130,7 @@ export async function renderMetroHtml(opts: {
       <div id="boot">loading model…</div>
       <div class="hud">
         <h1 id="hud-title">Select a station</h1>
-        <p id="hud-sub">Click a neon stop · one train rides its dep path</p>
+        <p id="hud-sub">Click a stop · pieces assemble once, then the train rides</p>
       </div>
       <div class="stats">
         <div><strong>${stationCount}</strong>stations</div>
@@ -298,10 +298,26 @@ export async function renderMetroHtml(opts: {
       g.userData.neonMats=[ring.material, ringInner.material, accent.material, beacon.material];
       g.userData.glow=glow;
       const nBuild=st.interchange?3:2;
+      const props=[];
       for(let i=0;i<nBuild;i++){
         const ang=(i/nBuild)*Math.PI*2+0.4, rr=1.55+rnd()*0.35;
-        g.add(building(Math.cos(ang)*rr, Math.sin(ang)*rr, 0.4+rnd()*0.35, 0.35+rnd()*0.25, 0.9+rnd()*1.6, Math.floor(rnd()*5)));
+        const b=building(Math.cos(ang)*rr, Math.sin(ang)*rr, 0.4+rnd()*0.35, 0.35+rnd()*0.25, 0.9+rnd()*1.6, Math.floor(rnd()*5));
+        b.userData.baseY=b.position.y;
+        b.userData.baseScale=1;
+        b.scale.setScalar(0);
+        b.visible=false;
+        props.push(b); g.add(b);
       }
+      // platform kit pieces also stagger in on first visit
+      [accent, canopy, mast, beacon].forEach(piece=>{
+        piece.userData.baseY=piece.position.y;
+        piece.userData.baseScale=1;
+        piece.scale.setScalar(0);
+        piece.visible=false;
+        props.push(piece);
+      });
+      g.userData.props=props;
+      g.userData.revealed=false;
       const canvas=document.createElement('canvas'); canvas.width=256; canvas.height=64;
       const ctx=canvas.getContext('2d');
       ctx.fillStyle='rgba(10,12,16,0.9)';
@@ -333,43 +349,77 @@ export async function renderMetroHtml(opts: {
       return c3*x*x*x-c1*x*x;
     }
 
-    function makeTrain(colorHex){
-      const color=new THREE.Color(colorHex); const g=new THREE.Group();
-      const mats=[];
-      function addMat(m){ mats.push(m); return m; }
-      const body=new THREE.Mesh(new RoundedBoxGeometry(0.95,0.36,0.42,2,0.07),
-        addMat(new THREE.MeshStandardMaterial({color, metalness:0.25, roughness:0.3, emissive:color, emissiveIntensity:0.35, transparent:true, opacity:0})));
-      body.castShadow=true; g.add(body);
-      const car2=new THREE.Mesh(new RoundedBoxGeometry(0.55,0.34,0.4,2,0.06),
-        addMat(new THREE.MeshStandardMaterial({color:color.clone().offsetHSL(0,-0.05,0.06), roughness:0.35, emissive:color, emissiveIntensity:0.15, transparent:true, opacity:0})));
-      car2.position.x=-0.78; car2.castShadow=true; g.add(car2);
-      const winMat=addMat(new THREE.MeshStandardMaterial({color:0xeaf6ff, emissive:0x7eb6ff, emissiveIntensity:0.25, roughness:0.25, transparent:true, opacity:0}));
-      [[0.15,0.06,0.22],[-0.2,0.06,0.22],[-0.78,0.06,0.21]].forEach(([x,y,z])=>{
-        const w=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.12,0.02), winMat); w.position.set(x,y,z); g.add(w);
-      });
-      const light=new THREE.Mesh(new THREE.SphereGeometry(0.045,8,8),
-        addMat(new THREE.MeshStandardMaterial({color:0xfff2c4, emissive:0xffe08a, emissiveIntensity:0.9, transparent:true, opacity:0})));
-      light.position.set(0.5,0,0); g.add(light);
-      g.scale.setScalar(0);
-      g.userData.fadeMats=mats;
-      return g;
+    // bokoko-style: each piece pops in on its own timeline
+    function updateStaggerParts(parts, elapsed, partDur, stagger){
+      let allDone=true;
+      for(let i=0;i<parts.length;i++){
+        const part=parts[i];
+        const local=Math.min(1, Math.max(0, (elapsed - i*stagger)/partDur));
+        if(local<1) allDone=false;
+        if(local<=0){
+          part.visible=false;
+          part.scale.setScalar(0);
+          continue;
+        }
+        part.visible=true;
+        const s=Math.max(0.001, easeOutBack(local));
+        part.scale.setScalar(s * (part.userData.baseScale||1));
+        if(part.userData.baseY!=null){
+          part.position.y = part.userData.baseY + (1-easeOutCubic(local))*0.55;
+        }
+        part.traverse(o=>{
+          if(o.material && o.material.transparent){
+            o.material.opacity = easeOutCubic(Math.min(1, local*1.2));
+          }
+        });
+      }
+      return allDone;
     }
 
-    // spawn burst ring (bokoko-like materialize cue)
-    function makeSpawnBurst(colorHex){
-      const neon=new THREE.Color(colorHex);
-      const g=new THREE.Group();
-      const ring=new THREE.Mesh(new THREE.TorusGeometry(0.35,0.03,8,48),
-        new THREE.MeshStandardMaterial({color:neon, emissive:neon, emissiveIntensity:2.5, transparent:true, opacity:0.95, roughness:0.2}));
-      ring.rotation.x=Math.PI/2; g.add(ring);
-      const disk=new THREE.Mesh(new THREE.CircleGeometry(0.28,32),
-        new THREE.MeshBasicMaterial({color:neon, transparent:true, opacity:0.35, side:THREE.DoubleSide}));
-      disk.rotation.x=-Math.PI/2; disk.position.y=0.01; g.add(disk);
-      g.userData.ring=ring; g.userData.disk=disk; g.scale.setScalar(0.2);
+    function snapPartsIn(parts){
+      for(const part of parts){
+        part.visible=true;
+        part.scale.setScalar(part.userData.baseScale||1);
+        if(part.userData.baseY!=null) part.position.y=part.userData.baseY;
+        part.traverse(o=>{ if(o.material && o.material.transparent) o.material.opacity=1; });
+      }
+    }
+
+    function makeTrain(colorHex, staggered){
+      const color=new THREE.Color(colorHex); const g=new THREE.Group();
+      const parts=[];
+      function partGroup(){
+        const pg=new THREE.Group();
+        pg.userData.baseScale=1; pg.userData.baseY=0;
+        if(staggered){ pg.scale.setScalar(0); pg.visible=false; }
+        parts.push(pg); g.add(pg); return pg;
+      }
+      function mat(opts){
+        return new THREE.MeshStandardMaterial({ transparent:!!staggered, opacity:staggered?0:1, ...opts });
+      }
+      const rear=partGroup();
+      const car2=new THREE.Mesh(new RoundedBoxGeometry(0.55,0.34,0.4,2,0.06),
+        mat({color:color.clone().offsetHSL(0,-0.05,0.06), roughness:0.35, emissive:color, emissiveIntensity:0.15}));
+      car2.position.x=-0.78; car2.castShadow=true; rear.add(car2);
+      const mid=partGroup();
+      const body=new THREE.Mesh(new RoundedBoxGeometry(0.95,0.36,0.42,2,0.07),
+        mat({color, metalness:0.25, roughness:0.3, emissive:color, emissiveIntensity:0.35}));
+      body.castShadow=true; mid.add(body);
+      const glass=partGroup();
+      const winMat=mat({color:0xeaf6ff, emissive:0x7eb6ff, emissiveIntensity:0.25, roughness:0.25});
+      [[0.15,0.06,0.22],[-0.2,0.06,0.22],[-0.78,0.06,0.21]].forEach(([x,y,z])=>{
+        const w=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.12,0.02), winMat); w.position.set(x,y,z); glass.add(w);
+      });
+      const nose=partGroup();
+      const light=new THREE.Mesh(new THREE.SphereGeometry(0.045,8,8),
+        mat({color:0xfff2c4, emissive:0xffe08a, emissiveIntensity:0.9}));
+      light.position.set(0.5,0,0); nose.add(light);
+      g.userData.parts=parts;
       return g;
     }
 
     const clock=new THREE.Clock();
+    const revealedStations=new Set();
 
     function disposeObject(obj){
       worldRoot.remove(obj);
@@ -380,20 +430,25 @@ export async function renderMetroHtml(opts: {
 
     function disposeTrainNow(){
       if(!activeTrain) return;
-      if(activeTrain.burst) disposeObject(activeTrain.burst);
+      // if we interrupt mid-assemble, keep what was meant to stay
+      if(activeTrain.stGroup && activeTrain.phase==='props'){
+        snapPartsIn(activeTrain.stGroup.userData.props||[]);
+        revealedStations.add(activeTrain.pkgId);
+        activeTrain.stGroup.userData.revealed=true;
+      }
       disposeObject(activeTrain.mesh);
       activeTrain=null; statRide.textContent='0';
     }
 
     function clearTrain(animated){
       if(!activeTrain) return;
-      if(!animated || activeTrain.phase==='outro'){
+      if(!animated || activeTrain.phase==='outro' || activeTrain.phase==='arrived'){
         disposeTrainNow();
         return;
       }
       activeTrain.phase='outro';
       activeTrain.t0=clock.getElapsedTime();
-      activeTrain.outroFrom=activeTrain.mesh.scale.x || 1;
+      activeTrain.outroFrom=1;
     }
 
     function setSelection(stGroup){
@@ -407,34 +462,64 @@ export async function renderMetroHtml(opts: {
       }
     }
 
+    function placeTrainOnCurve(mesh, curve, u){
+      const p=curve.getPointAt(Math.min(Math.max(u,0),0.999));
+      const look=curve.getPointAt(Math.min(u+0.02,0.999));
+      mesh.position.copy(p); mesh.lookAt(look); mesh.rotateY(Math.PI/2);
+    }
+
     function spawnRide(pkgId, label){
+      // already parked here — do not re-animate
+      if(activeTrain && activeTrain.pkgId===pkgId && (activeTrain.phase==='arrived' || activeTrain.phase==='ride' || activeTrain.phase==='intro' || activeTrain.phase==='props')){
+        selectedId=pkgId;
+        setSelection(stationMeshes.find(s=>s.userData.stationId===pkgId) || null);
+        return;
+      }
+
       disposeTrainNow();
       const ride=rideByPkg.get(pkgId);
       selectedId=pkgId;
-      setSelection(stationMeshes.find(s=>s.userData.stationId===pkgId) || null);
+      const stGroup=stationMeshes.find(s=>s.userData.stationId===pkgId) || null;
+      setSelection(stGroup);
       if(!ride){
         hudTitle.textContent=label;
         hudSub.textContent='Terminal stop · no dep ride path';
+        if(stGroup && !revealedStations.has(pkgId)){
+          // still reveal buildings once
+          activeTrain={
+            pkgId, mesh:new THREE.Group(), curve:null, speed:0, task:'',
+            phase:'props', t0:clock.getElapsedTime(), stGroup,
+            propDur:0.55, propStagger:0.13, firstVisit:true
+          };
+          worldRoot.add(activeTrain.mesh);
+        }
         return;
       }
+
+      const firstVisit=!revealedStations.has(pkgId);
       const pts=ride.points.map(p=>{ const v=world(p); v.y=railY+0.24; return v; });
       const curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',0.25);
-      const mesh=makeTrain(ride.color);
-      const start=curve.getPointAt(0);
-      const look=curve.getPointAt(0.02);
-      mesh.position.copy(start); mesh.lookAt(look); mesh.rotateY(Math.PI/2);
+      const mesh=makeTrain(ride.color, firstVisit);
+      placeTrainOnCurve(mesh, curve, 0);
       worldRoot.add(mesh);
-      const burst=makeSpawnBurst(ride.color);
-      burst.position.copy(start); burst.position.y-=0.12;
-      worldRoot.add(burst);
+
       activeTrain={
-        curve, mesh, burst, speed:ride.speed, task:ride.task,
-        phase:'intro', t0:clock.getElapsedTime(),
-        introDur:0.78, outroDur:0.42
+        pkgId, curve, mesh, speed:ride.speed, task:ride.task, stGroup,
+        phase: firstVisit ? 'props' : 'ride',
+        t0:clock.getElapsedTime(),
+        propDur:0.55, propStagger:0.13,
+        partDur:0.5, partStagger:0.11,
+        outroDur:0.35, firstVisit
       };
+      if(!firstVisit){
+        // revisit: already revealed city kit — train starts ride immediately, no pop-in
+        snapPartsIn(mesh.userData.parts);
+        hudSub.textContent='task · '+ride.task+' · riding dep path';
+      } else {
+        hudSub.textContent='task · '+ride.task+' · assembling stop…';
+      }
       statRide.textContent='1';
       hudTitle.textContent=label;
-      hudSub.textContent='task · '+ride.task+' · materializing…';
       playing=true;
       const playBtn=document.getElementById('btn-play');
       playBtn.textContent='Pause'; playBtn.setAttribute('aria-pressed','true');
@@ -478,7 +563,7 @@ export async function renderMetroHtml(opts: {
     document.getElementById('btn-clear').addEventListener('click', ()=>{
       clearTrain(true); selectedId=null; setSelection(null);
       hudTitle.textContent='Select a station';
-      hudSub.textContent='Click a neon stop · one train rides its dep path';
+      hudSub.textContent='Click a neon stop · buildings assemble once, then ride';
     });
     document.getElementById('btn-reset').addEventListener('click', ()=>{
       camera.position.copy(homeCam); controls.target.copy(homeTarget);
@@ -495,58 +580,43 @@ export async function renderMetroHtml(opts: {
       }
       if(activeTrain){
         const tr=activeTrain;
-        if(tr.phase==='intro'){
-          const raw=Math.min(1, (t-tr.t0)/tr.introDur);
-          const s=Math.max(0, easeOutBack(raw));
-          const fade=easeOutCubic(Math.min(1, raw*1.15));
-          const lift=(1-easeOutCubic(raw))*1.35;
-          tr.mesh.scale.setScalar(s);
-          for(const m of tr.mesh.userData.fadeMats){
-            m.opacity=fade;
-            if(m.emissiveIntensity!=null) m.userData.baseEmissive=m.userData.baseEmissive??m.emissiveIntensity;
-          }
-          // bloom flash then settle
-          const bloom=1+1.6*(1-raw);
-          for(const m of tr.mesh.userData.fadeMats){
-            if(m.userData.baseEmissive!=null) m.emissiveIntensity=m.userData.baseEmissive*bloom;
-          }
-          const p0=tr.curve.getPointAt(0);
-          const look=tr.curve.getPointAt(0.02);
-          tr.mesh.position.set(p0.x, p0.y+lift, p0.z);
-          tr.mesh.lookAt(look); tr.mesh.rotateY(Math.PI/2);
-          if(tr.burst){
-            const bs=0.2+easeOutCubic(raw)*1.6;
-            tr.burst.scale.setScalar(bs);
-            tr.burst.userData.ring.material.opacity=0.95*(1-raw);
-            tr.burst.userData.disk.material.opacity=0.35*(1-raw);
-            tr.burst.rotation.y=raw*Math.PI;
-          }
-          if(raw>=1){
-            tr.mesh.scale.setScalar(1);
-            for(const m of tr.mesh.userData.fadeMats){
-              m.opacity=1;
-              if(m.userData.baseEmissive!=null) m.emissiveIntensity=m.userData.baseEmissive;
+        if(tr.phase==='props'){
+          const props=(tr.stGroup && tr.stGroup.userData.props) || [];
+          const done=updateStaggerParts(props, t-tr.t0, tr.propDur, tr.propStagger);
+          if(done){
+            revealedStations.add(tr.pkgId);
+            if(tr.stGroup) tr.stGroup.userData.revealed=true;
+            if(!tr.curve){
+              // terminal: only props, then idle
+              disposeTrainNow();
+              hudSub.textContent='Terminal stop · assembled';
+            } else {
+              tr.phase='intro';
+              tr.t0=t;
+              hudSub.textContent='task · '+tr.task+' · train assembling…';
             }
-            if(tr.burst){ disposeObject(tr.burst); tr.burst=null; }
+          }
+        } else if(tr.phase==='intro'){
+          placeTrainOnCurve(tr.mesh, tr.curve, 0);
+          const done=updateStaggerParts(tr.mesh.userData.parts, t-tr.t0, tr.partDur, tr.partStagger);
+          if(done){
+            snapPartsIn(tr.mesh.userData.parts);
             tr.phase='ride';
             tr.t0=t;
             hudSub.textContent='task · '+tr.task+' · riding dep path';
           }
         } else if(tr.phase==='outro'){
           const raw=Math.min(1, (t-tr.t0)/tr.outroDur);
-          const s=Math.max(0.001, tr.outroFrom*(1-easeInBack(raw)));
+          const s=Math.max(0.001, 1-easeInBack(raw));
           tr.mesh.scale.setScalar(s);
-          for(const m of tr.mesh.userData.fadeMats) m.opacity=1-easeOutCubic(raw);
           if(raw>=1) disposeTrainNow();
+        } else if(tr.phase==='arrived'){
+          // parked — no animation
         } else if(playing && tr.phase==='ride'){
           const u=Math.min(1, (t-tr.t0)*tr.speed);
-          const p=tr.curve.getPointAt(Math.min(u,0.999));
-          const look=tr.curve.getPointAt(Math.min(u+0.02,0.999));
-          tr.mesh.position.copy(p); tr.mesh.lookAt(look); tr.mesh.rotateY(Math.PI/2);
-          // subtle settle bob at start of ride
-          const settle=Math.min(1,(t-tr.t0)*3);
-          tr.mesh.scale.setScalar(1+0.04*(1-settle)*Math.sin(settle*Math.PI));
+          placeTrainOnCurve(tr.mesh, tr.curve, u);
           if(u>=1){
+            tr.phase='arrived';
             hudSub.textContent='task · '+tr.task+' · arrived';
           }
         }
