@@ -349,7 +349,7 @@ export async function renderMetroHtml(opts: {
       return c3*x*x*x-c1*x*x;
     }
 
-    // bokoko-style: each piece pops in on its own timeline
+    // bokoko-style: each piece pops in on its own timeline (scale/Y only — never mutate shared material opacity)
     function updateStaggerParts(parts, elapsed, partDur, stagger){
       let allDone=true;
       for(let i=0;i<parts.length;i++){
@@ -367,11 +367,6 @@ export async function renderMetroHtml(opts: {
         if(part.userData.baseY!=null){
           part.position.y = part.userData.baseY + (1-easeOutCubic(local))*0.55;
         }
-        part.traverse(o=>{
-          if(o.material && o.material.transparent){
-            o.material.opacity = easeOutCubic(Math.min(1, local*1.2));
-          }
-        });
       }
       return allDone;
     }
@@ -381,25 +376,44 @@ export async function renderMetroHtml(opts: {
         part.visible=true;
         part.scale.setScalar(part.userData.baseScale||1);
         if(part.userData.baseY!=null) part.position.y=part.userData.baseY;
-        part.traverse(o=>{ if(o.material && o.material.transparent) o.material.opacity=1; });
       }
     }
 
     function makeTrain(colorHex){
       const color=new THREE.Color(colorHex); const g=new THREE.Group();
+      const parts=[];
+      function part(){
+        const pg=new THREE.Group();
+        pg.userData.baseScale=1;
+        pg.userData.baseY=0;
+        pg.position.y=0;
+        parts.push(pg); g.add(pg); return pg;
+      }
+      // order = bokoko reveal order
+      const rear=part();
+      const car2=new THREE.Mesh(new RoundedBoxGeometry(0.55,0.34,0.4,2,0.06),
+        new THREE.MeshStandardMaterial({color:color.clone().offsetHSL(0,-0.05,0.06), roughness:0.35, metalness:0.2, emissive:color, emissiveIntensity:0.15}));
+      car2.position.x=-0.78; car2.castShadow=true; car2.name='car2'; rear.add(car2);
+
+      const mid=part();
       const body=new THREE.Mesh(new RoundedBoxGeometry(0.95,0.36,0.42,2,0.07),
         new THREE.MeshStandardMaterial({color, metalness:0.25, roughness:0.3, emissive:color, emissiveIntensity:0.35}));
-      body.castShadow=true; body.name='body'; g.add(body);
-      const car2=new THREE.Mesh(new RoundedBoxGeometry(0.55,0.34,0.4,2,0.06),
-        new THREE.MeshStandardMaterial({color:color.clone().offsetHSL(0,-0.05,0.06), roughness:0.35, emissive:color, emissiveIntensity:0.15}));
-      car2.position.x=-0.78; car2.castShadow=true; car2.name='car2'; g.add(car2);
-      const winMat=new THREE.MeshStandardMaterial({color:0xeaf6ff, emissive:0x7eb6ff, emissiveIntensity:0.25, roughness:0.25});
+      body.castShadow=true; body.name='body'; mid.add(body);
+
+      const glass=part();
+      // unique materials per pane — never share opacity state
       [[0.15,0.06,0.22],[-0.2,0.06,0.22],[-0.78,0.06,0.21]].forEach(([x,y,z])=>{
-        const w=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.12,0.02), winMat); w.position.set(x,y,z); g.add(w);
+        const w=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.12,0.02),
+          new THREE.MeshStandardMaterial({color:0xb8dcff, emissive:0x5aa8ff, emissiveIntensity:0.35, roughness:0.2, metalness:0.4}));
+        w.position.set(x,y,z); glass.add(w);
       });
+
+      const nose=part();
       const light=new THREE.Mesh(new THREE.SphereGeometry(0.045,8,8),
         new THREE.MeshStandardMaterial({color:0xfff2c4, emissive:0xffe08a, emissiveIntensity:0.9}));
-      light.position.set(0.5,0,0); g.add(light);
+      light.position.set(0.5,0,0); nose.add(light);
+
+      g.userData.parts=parts;
       return g;
     }
 
@@ -496,20 +510,27 @@ export async function renderMetroHtml(opts: {
     function beginRide(tr){
       placeTrainOnCurve(tr.mesh, tr.curve, 0);
       tr.mesh.visible=true;
+      tr.mesh.scale.setScalar(1);
       playing=true;
       const playBtn=document.getElementById('btn-play');
       playBtn.textContent='Pause'; playBtn.setAttribute('aria-pressed','true');
       statRide.textContent='1';
-      // first appearance only — bokoko-style pop in; later station switches skip this
+      // first appearance only — bokoko: parts assemble one-by-one
       if(!trainEverDeparted){
-        tr.mesh.scale.setScalar(0);
+        const parts=tr.mesh.userData.parts||[];
+        for(const part of parts){
+          part.visible=false;
+          part.scale.setScalar(0);
+          part.position.y=part.userData.baseY||0;
+        }
         tr.phase='intro';
         tr.t0=clock.getElapsedTime();
-        tr.introDur=0.78;
-        hudSub.textContent='task · '+tr.task+' · train arriving…';
+        tr.partDur=0.52;
+        tr.partStagger=0.12;
+        hudSub.textContent='task · '+tr.task+' · train assembling…';
         return;
       }
-      tr.mesh.scale.setScalar(1);
+      snapPartsIn(tr.mesh.userData.parts||[]);
       tr.phase='ride';
       tr.t0=clock.getElapsedTime();
       hudSub.textContent='task · '+tr.task+' · riding dep path';
@@ -642,15 +663,11 @@ export async function renderMetroHtml(opts: {
             }
           }
         } else if(tr.phase==='intro'){
-          const raw=Math.min(1, (t-tr.t0)/tr.introDur);
-          const s=Math.max(0.001, easeOutBack(raw));
-          const lift=(1-easeOutCubic(raw))*1.25;
           placeTrainOnCurve(tr.mesh, tr.curve, 0);
-          tr.mesh.position.y += lift;
-          tr.mesh.scale.setScalar(s);
-          if(raw>=1){
-            tr.mesh.scale.setScalar(1);
-            placeTrainOnCurve(tr.mesh, tr.curve, 0);
+          const parts=tr.mesh.userData.parts||[];
+          const done=updateStaggerParts(parts, t-tr.t0, tr.partDur, tr.partStagger);
+          if(done){
+            snapPartsIn(parts);
             trainEverDeparted=true;
             tr.phase='ride';
             tr.t0=t;
