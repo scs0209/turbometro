@@ -4,7 +4,7 @@
   "description": "Your monorepo as a subway — trains run when turbo does.",
   "type": "module",
   "bin": {
-    "turbometro": "./bin/turbometro.js"
+    "turbometro": "bin/turbometro.js"
   },
   "files": [
     "bin",
