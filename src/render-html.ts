@@ -90,29 +90,34 @@ export async function renderMetroHtml(opts: {
   {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
   </script>
   <style>
-    :root{--bg:#0c0e12;--panel:rgba(14,16,20,.92);--ink:#e6e9ef;--muted:#8b93a1;--border:#2a303b;--accent:#5b8def;--accent-2:#8fa3bf}
-    *{box-sizing:border-box} html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:Syne,system-ui,sans-serif;overflow:hidden}
+    :root{
+      --bg:#05070d;--panel:rgba(6,10,18,.78);--ink:#e8f7ff;--muted:#7eb6c9;
+      --border:rgba(0,229,255,.28);--accent:#00f0ff;--accent-2:#ff2bd6;--warn:#39ff14;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:radial-gradient(120% 80% at 50% 0%,#0b1a2e 0%,#05070d 55%,#03040a 100%);color:var(--ink);font-family:Syne,system-ui,sans-serif;overflow:hidden}
     .app{height:100%;display:grid;grid-template-rows:auto 1fr auto}
-    .top,.bottom{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.7rem 1rem;background:var(--panel);backdrop-filter:blur(12px);z-index:2}
+    .top,.bottom{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.7rem 1rem;background:var(--panel);backdrop-filter:blur(14px);z-index:2;box-shadow:0 0 40px rgba(0,240,255,.06)}
     .top{border-bottom:1px solid var(--border)}.bottom{border-top:1px solid var(--border);flex-wrap:wrap}
-    .logo{font-weight:800;font-size:1.2rem;letter-spacing:-.04em;background:linear-gradient(110deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent}
+    .logo{font-weight:800;font-size:1.2rem;letter-spacing:-.04em;background:linear-gradient(110deg,#00f0ff,#39ff14 45%,#ff2bd6);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 12px rgba(0,240,255,.35))}
     .repo{font-family:"IBM Plex Mono",monospace;font-size:.72rem;color:var(--muted)}
     .toolbar{display:flex;gap:.35rem}
-    .toolbar button{font-family:"IBM Plex Mono",monospace;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink);background:transparent;border:1px solid var(--border);padding:.35rem .6rem;cursor:pointer}
-    .toolbar button:hover{border-color:var(--accent);color:var(--accent)}
+    .toolbar button{font-family:"IBM Plex Mono",monospace;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink);background:rgba(0,240,255,.04);border:1px solid var(--border);padding:.35rem .6rem;cursor:pointer;box-shadow:inset 0 0 12px rgba(0,240,255,.08)}
+    .toolbar button:hover{border-color:var(--accent);color:var(--accent);box-shadow:0 0 16px rgba(0,240,255,.25)}
     #view{position:relative;min-height:0}
+    #view:after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 40%,rgba(2,4,10,.55) 100%);z-index:1}
     #view canvas{display:block;width:100%!important;height:100%!important}
-    .hud{position:absolute;left:1rem;top:1rem;z-index:1;pointer-events:none;max-width:min(340px,80vw)}
-    .hud h1{margin:0;font-size:clamp(1.15rem,2.2vw,1.55rem);letter-spacing:-.03em;text-shadow:0 2px 12px rgba(0,0,0,.25)}
-    .hud p{margin:.35rem 0 0;font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:var(--muted);line-height:1.45}
-    .stats{position:absolute;right:1rem;top:1rem;z-index:1;display:flex;gap:.8rem;font-family:"IBM Plex Mono",monospace;font-size:.65rem;color:var(--muted);pointer-events:none}
-    .stats strong{display:block;color:var(--ink);font-family:Syne,sans-serif;font-size:.95rem}
-    .hint{position:absolute;left:50%;bottom:1rem;transform:translateX(-50%);font-family:"IBM Plex Mono",monospace;font-size:.65rem;color:var(--muted);background:var(--panel);border:1px solid var(--border);padding:.3rem .65rem;z-index:1;pointer-events:none}
+    .hud{position:absolute;left:1rem;top:1rem;z-index:2;pointer-events:none;max-width:min(360px,80vw)}
+    .hud h1{margin:0;font-size:clamp(1.15rem,2.2vw,1.55rem);letter-spacing:-.03em;text-shadow:0 0 18px rgba(0,240,255,.45),0 2px 12px rgba(0,0,0,.5)}
+    .hud p{margin:.35rem 0 0;font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:var(--muted);line-height:1.45;text-shadow:0 0 8px rgba(0,240,255,.2)}
+    .stats{position:absolute;right:1rem;top:1rem;z-index:2;display:flex;gap:.8rem;font-family:"IBM Plex Mono",monospace;font-size:.65rem;color:var(--muted);pointer-events:none}
+    .stats strong{display:block;color:var(--accent);font-family:Syne,sans-serif;font-size:.95rem;text-shadow:0 0 12px rgba(0,240,255,.5)}
+    .hint{position:absolute;left:50%;bottom:1rem;transform:translateX(-50%);font-family:"IBM Plex Mono",monospace;font-size:.65rem;color:var(--muted);background:var(--panel);border:1px solid var(--border);padding:.3rem .65rem;z-index:2;pointer-events:none;box-shadow:0 0 20px rgba(255,43,214,.12)}
     .chips{display:flex;flex-wrap:wrap;gap:.35rem}
-    .chip{display:inline-flex;align-items:center;gap:.3rem;font-family:"IBM Plex Mono",monospace;font-size:.68rem;border:1px solid var(--border);padding:.18rem .45rem;color:var(--muted)}
-    .chip i{width:.9rem;height:.22rem;display:inline-block}
+    .chip{display:inline-flex;align-items:center;gap:.3rem;font-family:"IBM Plex Mono",monospace;font-size:.68rem;border:1px solid var(--border);padding:.18rem .45rem;color:var(--muted);background:rgba(0,240,255,.04)}
+    .chip i{width:.9rem;height:.22rem;display:inline-block;box-shadow:0 0 8px currentColor}
     .note{font-family:"IBM Plex Mono",monospace;font-size:.62rem;color:var(--muted);max-width:26rem;line-height:1.4}
-    #boot{position:absolute;inset:0;display:grid;place-items:center;background:#0c0e12;z-index:3;font-family:"IBM Plex Mono",monospace;font-size:.78rem;color:#8b93a1}
+    #boot{position:absolute;inset:0;display:grid;place-items:center;background:#05070d;z-index:3;font-family:"IBM Plex Mono",monospace;font-size:.78rem;color:#00f0ff;text-shadow:0 0 16px rgba(0,240,255,.5)}
   </style>
 </head>
 <body>
@@ -131,15 +136,15 @@ export async function renderMetroHtml(opts: {
     <div id="view">
       <div id="boot">loading model…</div>
       <div class="hud">
-        <h1 id="hud-title">Select a station</h1>
-        <p id="hud-sub">Click a stop · pieces assemble once, then the train rides</p>
+        <h1 id="hud-title">Enter the district</h1>
+        <p id="hud-sub">Your monorepo as a neon city · click a hub to ride</p>
       </div>
       <div class="stats">
         <div><strong>${stationCount}</strong>stations</div>
         <div><strong>${railCount}</strong>rails</div>
         <div><strong id="stat-ride">0</strong>active</div>
       </div>
-      <div class="hint">click hub · zoom for all labels · drag orbit</div>
+      <div class="hint">night city · click hub · zoom labels · orbit</div>
     </div>
     <footer class="bottom">
       <div class="chips">${taskChips(opts.turbo)}</div>
@@ -162,33 +167,38 @@ export async function renderMetroHtml(opts: {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.02;
+    renderer.toneMappingExposure = 1.15;
     view.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x12151a);
-    scene.fog = new THREE.Fog(0x12151a, 40, 140);
+    scene.background = new THREE.Color(0x05070d);
+    scene.fog = new THREE.FogExp2(0x071018, 0.028);
 
-    const camera = new THREE.PerspectiveCamera(36, view.clientWidth / view.clientHeight, 0.1, 400);
+    const camera = new THREE.PerspectiveCamera(38, view.clientWidth / view.clientHeight, 0.1, 400);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.maxPolarAngle = Math.PI * 0.48;
+    controls.maxPolarAngle = Math.PI * 0.49;
     controls.minDistance = 6;
     controls.maxDistance = 120;
 
-    scene.add(new THREE.HemisphereLight(0xb8c4d4, 0x2a2e36, 0.55));
-    const sun = new THREE.DirectionalLight(0xf0f2f5, 1.35);
-    sun.position.set(14, 24, 12);
+    // night cyberpunk lighting — cool key, magenta rim, cyan fill
+    scene.add(new THREE.HemisphereLight(0x1a3a55, 0x120818, 0.55));
+    const sun = new THREE.DirectionalLight(0x7ecbff, 0.55);
+    sun.position.set(10, 22, 8);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.near = 2; sun.shadow.camera.far = 80;
+    sun.shadow.camera.near = 2; sun.shadow.camera.far = 90;
     sun.shadow.camera.left = sun.shadow.camera.bottom = -50;
     sun.shadow.camera.right = sun.shadow.camera.top = 50;
     sun.shadow.bias = -0.0002;
     scene.add(sun);
-    const fill = new THREE.DirectionalLight(0x6a7a90, 0.45);
-    fill.position.set(-14, 10, -8); scene.add(fill);
+    const fill = new THREE.DirectionalLight(0xff2bd6, 0.35);
+    fill.position.set(-16, 8, -10); scene.add(fill);
+    const neonUp = new THREE.PointLight(0x00f0ff, 1.1, 60, 2);
+    neonUp.position.set(0, 8, 0); scene.add(neonUp);
+    const neonMag = new THREE.PointLight(0xff2bd6, 0.55, 45, 2);
+    neonMag.position.set(-8, 3, 6); scene.add(neonMag);
 
     const allX = SCENE.stations.map(s => s.x);
     const allZ = SCENE.stations.map(s => s.z);
@@ -207,17 +217,18 @@ export async function renderMetroHtml(opts: {
     const dense = SCENE.stations.length > 14;
 
     const mats = {
-      slab: new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.82, metalness: 0.12 }),
-      edge: new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.75, metalness: 0.2 }),
-      asphalt: new THREE.MeshStandardMaterial({ color: 0x3a4048, roughness: 0.9, metalness: 0.05 }),
-      plaza: new THREE.MeshStandardMaterial({ color: 0x4a5058, roughness: 0.7, metalness: 0.15 }),
-      concrete: new THREE.MeshStandardMaterial({ color: 0x6a7078, roughness: 0.65, metalness: 0.18 }),
-      steel: new THREE.MeshStandardMaterial({ color: 0x8a929c, roughness: 0.35, metalness: 0.75 }),
-      glass: new THREE.MeshStandardMaterial({ color: 0x1c2836, roughness: 0.15, metalness: 0.85, transparent: true, opacity: 0.85 }),
-      dark: new THREE.MeshStandardMaterial({ color: 0x14171c, roughness: 0.6, metalness: 0.3 }),
-      road: new THREE.MeshStandardMaterial({ color: 0x32383f, roughness: 0.92, metalness: 0.08 }),
-      buildings: [0x3d434c,0x2f353d,0x454c56,0x252a31,0x505862].map(c =>
-        new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, metalness: 0.25 }))
+      slab: new THREE.MeshStandardMaterial({ color: 0x101822, roughness: 0.55, metalness: 0.45, emissive:0x031018, emissiveIntensity:0.35 }),
+      edge: new THREE.MeshStandardMaterial({ color: 0x070b12, roughness: 0.7, metalness: 0.35 }),
+      asphalt: new THREE.MeshStandardMaterial({ color: 0x151c28, roughness: 0.7, metalness: 0.2 }),
+      plaza: new THREE.MeshStandardMaterial({ color: 0x1a2433, roughness: 0.55, metalness: 0.3 }),
+      concrete: new THREE.MeshStandardMaterial({ color: 0x2a3548, roughness: 0.5, metalness: 0.35 }),
+      steel: new THREE.MeshStandardMaterial({ color: 0x4a5a70, roughness: 0.28, metalness: 0.85, emissive:0x002233, emissiveIntensity:0.25 }),
+      glass: new THREE.MeshStandardMaterial({ color: 0x061820, roughness: 0.1, metalness: 0.9, emissive:0x00e5ff, emissiveIntensity:0.45, transparent: true, opacity: 0.75 }),
+      glassHot: new THREE.MeshStandardMaterial({ color: 0x1a0820, roughness: 0.12, metalness: 0.85, emissive:0xff2bd6, emissiveIntensity:0.55, transparent: true, opacity: 0.8 }),
+      dark: new THREE.MeshStandardMaterial({ color: 0x06080e, roughness: 0.55, metalness: 0.4 }),
+      road: new THREE.MeshStandardMaterial({ color: 0x0c121c, roughness: 0.85, metalness: 0.15, emissive:0x001018, emissiveIntensity:0.2 }),
+      buildings: [0x121820,0x0e141c,0x182030,0x0a1018,0x1c2838].map(c =>
+        new THREE.MeshStandardMaterial({ color: c, roughness: 0.45, metalness: 0.4 }))
     };
     const rideByPkg = new Map(SCENE.trains.map(t => [t.package, t]));
     const stationMeshes = [];
@@ -238,21 +249,55 @@ export async function renderMetroHtml(opts: {
     const pedestal = new THREE.Mesh(new THREE.BoxGeometry(slabW*0.55, 0.4, slabD*0.55), mats.dark);
     pedestal.position.y = -1.15; pedestal.castShadow = true; worldRoot.add(pedestal);
 
+    // neon rim under the district
+    const rim = new THREE.Mesh(
+      new THREE.RingGeometry(Math.max(slabW,slabD)*0.38, Math.max(slabW,slabD)*0.405, 64),
+      new THREE.MeshBasicMaterial({ color:0x00f0ff, transparent:true, opacity:0.4, side:THREE.DoubleSide })
+    );
+    // Ring flat on ground
+    rim.rotation.x = -Math.PI/2; rim.position.y = 0.02; worldRoot.add(rim);
+
+    // circuit grid on the slab
+    const grid = new THREE.GridHelper(Math.max(slabW, slabD)*1.05, Math.max(12, Math.floor(Math.max(slabW,slabD))), 0x00e5ff, 0x123048);
+    grid.position.y = 0.16;
+    grid.material.transparent = true;
+    if (Array.isArray(grid.material)) grid.material.forEach(m=>{ m.transparent=true; m.opacity=0.35; });
+    else { grid.material.opacity = 0.35; }
+    worldRoot.add(grid);
+
     function building(x,z,w,d,h,mi){
       const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mats.buildings[mi%mats.buildings.length]);
       mesh.position.set(x,h/2+0.16,z); mesh.castShadow=true; mesh.receiveShadow=true;
-      const win=new THREE.Mesh(new THREE.BoxGeometry(w*0.72,h*0.55,0.03), mats.glass);
-      win.position.set(0,0.02,d/2+0.02); mesh.add(win); return mesh;
-    }
-    // only a few background masses on small maps — dense graphs stay readable
-    if(!dense){
-      for(let i=0;i<10;i++){
-        const x=(rnd()-0.5)*slabW*0.7, z=(rnd()-0.5)*slabD*0.7;
-        let ok=true;
-        for(const st of SCENE.stations){ const p=world(st); if(Math.hypot(p.x-x,p.z-z)<2.0){ok=false;break;} }
-        if(!ok) continue;
-        worldRoot.add(building(x,z, 0.4+rnd()*0.55, 0.35+rnd()*0.45, 0.6+rnd()*1.6, Math.floor(rnd()*5)));
+      const glowMat = rnd()>0.45 ? mats.glass : mats.glassHot;
+      const win=new THREE.Mesh(new THREE.BoxGeometry(w*0.72,h*0.55,0.03), glowMat);
+      win.position.set(0,0.02,d/2+0.02); mesh.add(win);
+      if(h>1.1){
+        const sign=new THREE.Mesh(new THREE.BoxGeometry(w*0.5,0.06,0.04),
+          new THREE.MeshStandardMaterial({color:0x001018, emissive: rnd()>0.5?0x00f0ff:0xff2bd6, emissiveIntensity:1.8}));
+        sign.position.set(0, h*0.35, d/2+0.03); mesh.add(sign);
       }
+      return mesh;
+    }
+    // night district blocks — always some skyline so it feels like a world
+    const skyN = dense ? 14 : 18;
+    for(let i=0;i<skyN;i++){
+      const x=(rnd()-0.5)*slabW*0.85, z=(rnd()-0.5)*slabD*0.85;
+      let ok=true;
+      for(const st of SCENE.stations){ const p=world(st); if(Math.hypot(p.x-x,p.z-z)<1.7){ok=false;break;} }
+      if(!ok) continue;
+      worldRoot.add(building(x,z, 0.35+rnd()*0.7, 0.3+rnd()*0.55, 0.8+rnd()*2.8, Math.floor(rnd()*5)));
+    }
+
+    // distant horizon towers (silhouette city)
+    for(let i=0;i<10;i++){
+      const a=rnd()*Math.PI*2, r=Math.max(slabW,slabD)*0.72+rnd()*4;
+      const h=2+rnd()*5;
+      const t=new THREE.Mesh(new THREE.BoxGeometry(0.5+rnd()*0.8, h, 0.5+rnd()*0.8), mats.dark);
+      t.position.set(Math.cos(a)*r, h/2-0.2, Math.sin(a)*r);
+      const band=new THREE.Mesh(new THREE.BoxGeometry(0.52,0.08,0.52),
+        new THREE.MeshStandardMaterial({color:0x000000, emissive:i%2?0x00f0ff:0xff2bd6, emissiveIntensity:1.2}));
+      band.position.y=h*0.3; t.add(band);
+      worldRoot.add(t);
     }
 
     const railY = 1.05;
@@ -263,7 +308,7 @@ export async function renderMetroHtml(opts: {
       const segs = Math.max(36, pts.length*16);
       const radius = Math.max(0.055, rail.width*0.5);
       const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, segs, radius, 12, false),
-        new THREE.MeshStandardMaterial({ color: new THREE.Color(rail.color), metalness:0.3, roughness:0.35, emissive:new THREE.Color(rail.color), emissiveIntensity:0.2 }));
+        new THREE.MeshStandardMaterial({ color: new THREE.Color(rail.color), metalness:0.45, roughness:0.22, emissive:new THREE.Color(rail.color), emissiveIntensity:0.85 }));
       tube.castShadow=true; tube.receiveShadow=true; worldRoot.add(tube);
       const deck = new THREE.Mesh(new THREE.TubeGeometry(curve, segs, radius*1.75, 8, false), mats.steel);
       deck.position.y=-0.05; deck.castShadow=true; worldRoot.add(deck);
@@ -626,8 +671,7 @@ export async function renderMetroHtml(opts: {
     const dist=Math.max(size.x, size.z, 10) * (dense ? 0.95 : 1.15);
     camera.position.set(center.x+dist*0.85, center.y+dist*0.72, center.z+dist*0.95);
     controls.maxDistance = Math.max(40, dist * 2.4);
-    scene.fog.near = dist * 0.9;
-    scene.fog.far = dist * 3.2;
+    if(scene.fog && scene.fog.isFogExp2) scene.fog.density = Math.max(0.012, 0.45 / Math.max(dist, 12));
     controls.update();
     const homeCam=camera.position.clone(), homeTarget=controls.target.clone();
 
@@ -660,7 +704,7 @@ export async function renderMetroHtml(opts: {
     document.getElementById('btn-clear').addEventListener('click', ()=>{
       clearTrain(true); selectedId=null; setSelection(null);
       hudTitle.textContent='Select a station';
-      hudSub.textContent='Click a neon stop · buildings assemble once, then ride';
+      hudSub.textContent='Your monorepo as a neon city · click a hub to ride';
     });
     document.getElementById('btn-reset').addEventListener('click', ()=>{
       camera.position.copy(homeCam); controls.target.copy(homeTarget);
